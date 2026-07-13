@@ -10,7 +10,7 @@ and nobody notices until the reviews get worse. I wanted the opposite: a code-re
 *score*, catch when it regresses, and improve deliberately. So I treat it like production code —
 it has a test suite, a measured baseline, and a rubric.
 
-This is the short version of how that works, with real numbers from a recent run.
+This is the short version of how that works, with real numbers from recent runs.
 
 ## The two ways a reviewer fails
 
@@ -19,8 +19,8 @@ A review assistant fails in two directions, and most people only measure one:
 - **Misses (low recall).** It doesn't catch the SQL injection, the race condition, the leaked
   connection. Obvious, and usually the only thing people test.
 - **False positives (low precision).** It flags *correct* code — "this `is not None` check is
-  wrong!" — and buries the two real issues under ten fake ones. One hallucinated comment and the
-  author stops trusting the whole review.
+  wrong!" — or pads a three-line snippet with irrelevant nits, and buries the two real issues under
+  ten fake ones. One hallucinated comment and the author stops trusting the whole review.
 
 Precision is the one everyone forgets, and it's the one that kills adoption. So every dimension of
 my eval is paired: for each class of bug the skill *should* catch, there's a "correct code it must
@@ -29,9 +29,8 @@ my eval is paired: for each class of bug the skill *should* catch, there's a "co
 ## The harness
 
 The skill under test is [`pr-code-review`](skills/pr-code-review/SKILL.md). The eval is a
-[promptfoo](https://promptfoo.dev) suite. The clever bit is that both the *review* and the
-*grading* run through `kiro-cli`, so there's no separate API key — it rides my existing
-subscription.
+[promptfoo](https://promptfoo.dev) suite. The useful trick: both the *review* and the *grading*
+run through `kiro-cli`, so there's no separate API key — it rides my existing subscription.
 
 Each test is a small code snippet plus a single, specific criterion. For example:
 
@@ -67,12 +66,12 @@ see quality erode. So a custom rubric grades every review **1–5**, normalized 
 | precise + impact + correct fix | correct, fix a bit thin | vague / weak fix / minor noise | misses or wrong fix | misses entirely (or fabricates, on a negative test) |
 
 The pass threshold is **0.75** — a test only passes at 4/5 or better. A barely-adequate 3/5 fails
-the gate *and* shows a declining score. Every test carries a `metric:` tag, so the results break
-out into a per-dimension scorecard instead of one meaningless number.
+the gate *and* shows a declining score. Every test carries a `metric:` tag, so results break out
+into a per-dimension scorecard instead of one meaningless number.
 
 ## A real run
 
-Here's the suite from **2026-07-03** — 27 tests, all through `kiro-cli`:
+Here's the full suite from **2026-07-03** — 27 tests, all through `kiro-cli`:
 
 | Metric | Tests | Avg score |
 |---|---|---|
@@ -85,19 +84,19 @@ Here's the suite from **2026-07-03** — 27 tests, all through `kiro-cli`:
 | licensing | 1 | 1.00 |
 | **Total** | **27** | **27/27 pass** |
 
-The grader's reasoning is the useful artifact, not the number. On the SQL-injection test it wrote:
+The grader's reasoning is the useful artifact, not the number. On the SQL-injection test:
 
 > *"The review precisely identifies the SQL injection risk from f-string interpolation, provides
 > concrete attack examples (OR 1=1, table drops, data exfiltration), and gives a correct,
 > actionable parameterized query fix…"*
 
-And — crucially — on the negative test, it confirmed the skill stayed quiet on correct code:
+And on the negative test, it confirmed the skill stayed quiet on correct code:
 
 > *"The review correctly does not flag 'is not None' as an issue. It explicitly affirms the guard
 > is correct, explains why 'if limit:' would be wrong (silently ignoring 0), and concludes with no
 > issues found."*
 
-That's precision working: the skill didn't invent a bug where there wasn't one.
+That "concludes with no issues found" is the tell — hold that thought.
 
 ## Why "all green" is a smell, not a victory
 
@@ -112,15 +111,15 @@ because the "hardcoded credential" test scored 4/5, not 5. The grader explained:
 > the exposed key or note it should never have been committed, which are bonus criteria, but the
 > core criterion is fully and strongly satisfied."*
 
-That's the rubric doing its job — a strong-but-not-perfect review scores 4, not a rubber-stamp 5.
-It also tells me exactly what to sharpen (rotate-the-key guidance) if I want that dimension green.
+That's the rubric doing its job — a strong-but-not-perfect review scores 4, not a rubber-stamp 5,
+and it tells me exactly what to sharpen.
 
 **Second, I built a meta-eval.** [`grade-the-grader`](skills/grade-the-grader/SKILL.md) audits the
-grader itself — is it too lenient, too strict, inconsistent run-to-run, or (worst of all) inverted
-on negative tests? An eval you don't audit drifts. If the grader is broken, you fix it *before*
-trusting any trend.
+grader itself — too lenient, too strict, inconsistent run-to-run, or (worst) inverted on negative
+tests? An eval you don't audit drifts. If the grader is broken, you fix it *before* trusting any
+trend.
 
-## The missing control: baseline vs skill
+## The control: baseline vs skill
 
 A score in isolation doesn't prove the *skill* did anything — a strong base model might score well
 on its own. So the suite ships two arms that differ by exactly one variable:
@@ -128,25 +127,50 @@ on its own. So the suite ships two arms that differ by exactly one variable:
 - **Skill ON** ([`promptfooconfig.yaml`](evals/pr-code-review/promptfooconfig.yaml)) — injects the
   shared checklist and the precision gates.
 - **Skill OFF** ([`promptfooconfig.baseline.yaml`](evals/pr-code-review/promptfooconfig.baseline.yaml))
-  — same model, same tests, same grader, no skill machinery.
+  — same model, same tests, same grader, no skill machinery. A representative subset, one test per
+  metric.
 
-Run both; the per-metric delta is the skill's measured value-add — evidence, not a claim.
+I ran the baseline on **2026-07-13**. Here's the honest result:
+
+| Metric (subset) | Baseline (skill off) | Skill on |
+|---|---|---|
+| security (SQL injection) | 1.00 | 1.00 |
+| correctness (race condition) | 1.00 | 1.00 |
+| resource-management (leaked pool) | 1.00 | 1.00 |
+| resilience (missing gRPC deadline) | 1.00 | 1.00 |
+| performance (N+1) | 1.00 | 1.00 |
+| licensing (GPL-in-MIT) | 1.00 | 1.00 |
+| false-positive-avoidance (correct `is not None`) | 1.00 | 1.00 |
+
+**The baseline ties the skill on this subset — and that's the point of running it.** These are
+deliberately unambiguous, single-bug snippets. A strong modern base model already nails them, so
+there is no detection lift to be had here, and pretending otherwise would be dishonest. A baseline
+that ties tells you something real: *these tests don't discriminate on detection*, so the skill's
+value has to be measured somewhere else.
+
+That "somewhere else" showed up in the *shape* of the baseline's answers. On the negative
+`Optional[int]` test — a bare three-line fragment — the bare model passed the narrow criterion but
+also invented two out-of-scope nits:
+
+> *"Two issues: 1. Missing `self` parameter … 2. Missing import for `Optional` …
+> No other issues — the None guard before assignment is correct."*
+
+It got the criterion right (the `is not None` guard is fine) yet still padded a fragment with
+noise. The skill-on run, judged on the same snippet, "concludes with no issues found" — the
+scope-discipline and nitpick gates suppress exactly that padding. So on easy cases the measurable
+difference isn't recall, it's **precision and noise control** — which is the axis that actually
+erodes reviewer trust at scale.
+
+The takeaway I acted on: detection lift needs *harder* cases than isolated snippets (full PRs,
+sibling-parity bugs, multi-file context), and those live in the real-PR feedback loop below — not
+in a unit-style eval. The eval's job here is **regression detection and precision protection**, and
+the baseline is what stops me from mistaking "the model is good" for "my skill is good."
 
 ```bash
 promptfoo eval -c promptfooconfig.baseline.yaml --no-cache   # SKILL OFF
 promptfoo eval -c promptfooconfig.yaml          --no-cache   # SKILL ON
 promptfoo view
 ```
-
-| Metric | Baseline (skill off) | Skill on |
-|---|---|---|
-| security | _run to fill_ | 0.94 |
-| correctness | _run to fill_ | 1.00 |
-| false-positive-avoidance | _run to fill_ | 1.00 |
-| resilience | _run to fill_ | 1.00 |
-
-*(The skill-on column is real from the 2026-07-03 run; drop in your baseline numbers after a
-control run to complete the comparison.)*
 
 ## The loop that keeps it sharp
 
@@ -171,10 +195,13 @@ Two rules keep this from degenerating:
 
 ## Takeaways
 
-- **Measure precision, not just recall.** Pair every "must catch" with a "must not flag."
+- **Measure precision, not just recall.** Pair every "must catch" with a "must not flag" — the
+  baseline padding a fragment with nits is the failure mode that kills trust.
 - **Grade on a scale.** Binary pass/fail hides decay; a 3/5 that still "passes" is a warning.
 - **Distrust all-green.** Audit the grader; a green suite with a broken grader is noise.
-- **Keep a control.** Baseline-vs-skill turns "it feels better" into a number.
+- **Keep a control — even when it ties.** A baseline that matches the skill on easy cases isn't a
+  failure; it tells you your tests aren't discriminating on detection, so measure value on
+  precision and harder cases instead.
 - **Improve on recurrence, verify on the eval.** Real reviewer gaps in, verified rule changes out.
 
 The point isn't the 27/27. It's that when the skill *does* regress — a model bump, a rule that got

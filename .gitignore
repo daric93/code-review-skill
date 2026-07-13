@@ -1,5 +1,5 @@
 # promptfoo run artifacts (the SQLite db in ~/.promptfoo is the source of truth)
-evals/**/results.json
+evals/**/results*.json
 evals/**/results.csv
 evals/**/results.yaml
 .promptfoo/
