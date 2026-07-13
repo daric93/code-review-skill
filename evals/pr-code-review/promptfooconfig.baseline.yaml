@@ -1,0 +1,200 @@
+description: "pr-code-review BASELINE (no skill) — A/B control for evidence of value"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BASELINE ARM of the pr-code-review eval.
+#
+# This config is identical to promptfooconfig.yaml (the skill arm) in grader,
+# rubric, and threshold — the ONLY difference is the provider:
+#
+#   skill arm    → ../kiro-review.sh   (injects review-checklist.md + precision gates)
+#   baseline arm → ../kiro-baseline.sh (bare model, same pin, no skill machinery)
+#
+# It carries a REPRESENTATIVE SUBSET of the full suite — one test per metric
+# (security, correctness, resource-management, resilience, performance,
+# licensing) plus a false-positive-avoidance negative — so a run is cheap while
+# still covering every scoring dimension. The prompts are copied verbatim from
+# the skill arm so the comparison is apples-to-apples.
+#
+# HOW TO PRODUCE THE EVIDENCE OF VALUE:
+#   cd evals/pr-code-review
+#   promptfoo eval -c promptfooconfig.baseline.yaml --no-cache   # skill OFF
+#   promptfoo eval -c promptfooconfig.yaml          --no-cache   # skill ON
+#   promptfoo view   # compare per-metric scores; the delta is the skill's lift
+#
+# Results are stored in ~/.promptfoo/output.db (browse with `promptfoo view`).
+outputPath: ./results.baseline.json
+
+providers:
+  - id: "exec: ../kiro-baseline.sh"
+    label: "kiro-cli-baseline"
+
+prompts:
+  - "{{prompt}}"
+
+# Same grader, rubric, and threshold as the skill arm — see promptfooconfig.yaml
+# for the full annotated version. Duplicated here (not shared) so this control
+# config is self-contained and runnable on its own.
+defaultTest:
+  threshold: 0.75
+  options:
+    provider:
+      id: "exec: ../kiro-grade.sh"
+      label: "kiro-cli-grader"
+    rubricPrompt: |
+      You are a strict evaluator of CODE REVIEW QUALITY. You are grading the output of an
+      automated code-review skill against a single review criterion.
+
+      [CRITERION THE REVIEW MUST SATISFY]
+      {{rubric}}
+
+      [THE REVIEW OUTPUT TO GRADE]
+      {{output}}
+
+      Score the review on this 1-5 scale, judging ONLY against the criterion above:
+
+      5 (Excellent): Fully satisfies the criterion. Identifies the issue precisely (or, for a
+        "does not flag" criterion, correctly stays silent), explains the impact, and gives a
+        correct, actionable fix. No fabricated or irrelevant issues.
+      4 (Good): Satisfies the criterion. Identifies the issue and gives a usable fix, but the
+        explanation or fix is slightly thin or imprecise. Minor noise is acceptable.
+      3 (Adequate): Partially satisfies the criterion. Mentions the issue vaguely or buries it,
+        OR identifies it but gives a weak/partial fix, OR adds some fabricated minor issues.
+      2 (Poor): Barely touches the criterion. Hints at the area but misses the actual issue, or
+        the recommendation is wrong, or it fabricates a significant non-issue.
+      1 (Fail): Does not satisfy the criterion at all. Misses the issue entirely, or (for a
+        "does not flag" criterion) fabricates the issue it should have ignored.
+
+      Be skeptical. Reserve 5 for genuinely strong reviews. A review that "sort of" mentions the
+      issue is a 3, not a 4. For negative tests (criteria beginning with "Does not"), a review
+      that invents the problem it should have ignored is a 1.
+
+      Return ONLY a JSON object. Output the raw JSON object only — no markdown code
+      fences, no preamble, no trailing commentary, and no newlines inside string values:
+      {
+        "reason": "<1-3 sentences: what the review did well or poorly against the criterion, citing specifics>",
+        "score": <0.0-1.0, computed as (rating - 1) / 4 — i.e. 5->1.0, 4->0.75, 3->0.5, 2->0.25, 1->0.0>,
+        "pass": <true if score >= 0.75, else false>
+      }
+
+tests:
+  # security
+  - description: "baseline — SQL injection via f-string"
+    vars:
+      prompt: |
+        Review this Python code:
+        ```python
+        def get_user(user_id):
+            query = f"SELECT * FROM users WHERE id = {user_id}"
+            return db.execute(query)
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies SQL injection risk and recommends parameterized queries."
+        metric: security
+
+  # correctness
+  - description: "baseline — race condition on read-modify-write"
+    vars:
+      prompt: |
+        Review this code used in a multi-threaded web server:
+        ```python
+        class Counter:
+            def __init__(self):
+                self.count = 0
+
+            def increment(self):
+                current = self.count
+                self.count = current + 1
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies the race condition when increment is called concurrently."
+        metric: correctness
+
+  # resource-management
+  - description: "baseline — close() misses _pool"
+    vars:
+      prompt: |
+        Review this Python class:
+        ```python
+        class DBClient:
+            def __init__(self, url: str):
+                self._conn = create_connection(url)
+                self._pool = create_pool(url)
+
+            def close(self):
+                self._conn.close()
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that close() only cleans up _conn and leaks _pool. Every resource initialized in __init__ must have a cleanup path."
+        metric: resource-management
+
+  # resilience
+  - description: "baseline — missing deadline on gRPC call"
+    vars:
+      prompt: |
+        Review this Python code that calls a gRPC service:
+        ```python
+        def fetch_profile(stub, user_id: str) -> Profile:
+            request = ProfileRequest(user_id=user_id)
+            return stub.GetProfile(request)
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that the gRPC call has no deadline/timeout. Without a deadline the call can hang indefinitely if the server is slow or unresponsive, causing cascading hangs upstream. Recommends passing an explicit timeout (e.g. stub.GetProfile(request, timeout=N))."
+        metric: resilience
+
+  # performance
+  - description: "baseline — N+1 query pattern in a loop"
+    vars:
+      prompt: |
+        Review this Python code that loads orders for a list of users:
+        ```python
+        def load_orders(db, user_ids: list[int]) -> dict[int, list]:
+            result = {}
+            for uid in user_ids:
+                result[uid] = db.execute(
+                    "SELECT * FROM orders WHERE user_id = ?", (uid,)
+                ).fetchall()
+            return result
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies the N+1 query pattern — one query per user_id means N round-trips that grow linearly with the input. Recommends a single batched query (e.g. WHERE user_id IN (...) or a JOIN) and grouping the results in memory. Should focus on the round-trip count, not fabricate unrelated issues."
+        metric: performance
+
+  # licensing
+  - description: "baseline — GPL dependency added to an MIT project"
+    vars:
+      prompt: |
+        Review this dependency addition. The project is MIT-licensed (per its LICENSE file and package metadata):
+        ```diff
+        # pyproject.toml
+         [project]
+         name = "widget-sdk"
+         license = { text = "MIT" }
+         dependencies = [
+           "httpx>=0.27",
+        +  "gpl-only-parser>=2.0",   # this library is licensed GPL-3.0
+         ]
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies a license-compatibility problem: adding a GPL-3.0 dependency to an MIT-licensed project can impose copyleft obligations incompatible with MIT distribution. Recommends verifying the license, seeking an MIT/BSD/Apache-licensed alternative, or consulting on licensing before adding it. A review that ignores the license issue fails."
+        metric: licensing
+
+  # false-positive-avoidance (negative test — the precision arm)
+  - description: "baseline — negative — correct Optional[int] is-not-None check"
+    vars:
+      prompt: |
+        Review this Python function that accepts an optional integer:
+        ```python
+        def set_limit(limit: Optional[int] = None) -> None:
+            if limit is not None:
+                self._limit = limit
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Does not flag this as an issue. The use of 'is not None' is correct for Optional[int] where 0 is a valid value. A review that flags this as wrong would be a false positive."
+        metric: false-positive-avoidance

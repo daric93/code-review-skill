@@ -1,0 +1,13 @@
+# promptfoo run artifacts (the SQLite db in ~/.promptfoo is the source of truth)
+evals/**/results.json
+evals/**/results.csv
+evals/**/results.yaml
+.promptfoo/
+
+# provider install dirs (if someone runs sync.sh --project .)
+.kiro/
+.claude/
+
+# OS / editor cruft
+.DS_Store
+*.swp
