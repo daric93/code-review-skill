@@ -1,6 +1,6 @@
 # How I evaluate my AI skills and agents
 
-*A prompt is code that makes judgment calls. Here's why I test it like code, how I do it, what the tests actually caught, and where I'm taking it next.*
+*A prompt is code that makes judgment calls. Here's why I test it like code, how I do it, what the tests actually caught (including a bug in one of my own tests), and where I'm taking it next.*
 
 ---
 
@@ -22,7 +22,7 @@ the thing that reviews the code with nothing behind it?
 
 So I started treating my skills and agents like production code. The atomic ones get a real test
 suite; the big multi-step agents get a different kind of check I'll come back to. This is how that
-works, what it actually caught, and where it still falls short.
+works, what it caught, and where it still falls short.
 
 ## Why evaluate skills and agents at all
 
@@ -41,7 +41,7 @@ hallucinated comment and the author stops reading.
 
 **Not everything deserves the same test.** An atomic skill (review this code, escape this query)
 has a checkable answer, so it earns a unit-style eval. A twelve-step agent that opens a PR,
-responds to CI, and negotiates review comments does not — evaluating that end to end is expensive
+responds to CI, and negotiates review comments does not: evaluating that end to end is expensive
 and noisy, and the score wouldn't tell you which step broke. Those I improve through a
 retrospective loop instead, driven by what real reviewers catch. Knowing which tool gets which
 treatment is half the discipline.
@@ -70,62 +70,83 @@ model, with the skill's checklist and precision gates switched **on**, then **of
 is the control. Without it, a good score might just mean the base model is good and the skill is
 decoration.
 
-## What the tests actually caught
+## What the control actually showed
 
-Here's a real run from July 3rd, skill on, across 27 tests. Twenty-seven for twenty-seven, every
-dimension at or near 1.0, with security at 0.94.
+Here's the head-to-head across 29 tests, same day, same model, skill on versus skill off:
 
-Which is exactly when I get suspicious. An all-green board is also what a broken, too-lenient grader
-produces. A perfect score isn't proof the skill is good; it might be proof the exam is easy. Two
-things turned that suspicion into evidence.
+| | Passed (≥4/5) |
+|---|---|
+| **Skill on** | 29 / 29 |
+| **Skill off (bare model)** | 27 / 29 |
 
-**The control did its job.** I ran the "skill off" arm against the same 27 tests. The bare model
-scored 25 of 27, and the gap landed exactly where the checklist carries knowledge a raw model
-doesn't reliably have:
+Two failures out of 29 doesn't sound like much until you look at *where* the bare model fell short
+and by how much. The gap lands exactly on the checks the skill's checklist exists to enforce:
 
-- *Retry and backoff on a transient call.* The snippet publishes to a queue with no retry. The bare
-  model wrapped the exception and re-raised it, and the grader scored it **0.25**: "never
-  specifically identifies the transient failure / retry / backoff problem." With the skill's
-  resilience checklist, the same case scored **1.0**.
-- *Silent truncation.* A query hardcodes `LIMIT 0, 10000`. The bare model flagged it, but as a
-  performance and memory concern, and scored **0.75**: it "frames the issue purely as a
-  performance/memory problem rather than a data truncation / silent data loss risk." The checklist
-  treats a silent cap that drops caller data as a correctness bug, not a perf safeguard, so with the
-  skill it scored **1.0**.
-- *Escaping the right context.* Code strips only double quotes before building a search-engine
-  phrase query. The bare model got partway and scored **0.75**; the skill's rule about distinct
-  escape contexts for each field type took it to **1.0**.
+- **Retry and backoff on a transient call.** A snippet publishes to a queue with no retry. The bare
+  model wrapped the exception and moved on, and the grader scored it **0.25**: it "never explicitly
+  identifies that transient failures will cause outright failure with no retry or backoff." With the
+  skill's resilience checklist, the same case scored **1.0**.
+- **Silent truncation.** A query hardcodes `LIMIT 0, 10000`. The bare model flagged it, but framed
+  it "entirely as a performance/memory risk," not as silent data loss that drops customer rows with
+  no warning. **0.25** bare, **1.0** with the skill, which treats a silent cap as a correctness bug.
+- **Over-flagging correct Rust.** On a *negative* test, the bare model invented a signed/unsigned
+  concern about `max_connections` that the code already guards, "bordering on fabricating a
+  vulnerability." **0.75** bare, **1.0** with the skill's verify-before-flag gate.
 
-So the per-dimension deltas, skill minus baseline, are real where it matters: resilience +0.11,
-security +0.06, correctness +0.03, and a tie on the categories where a strong model already does
-fine. Not a landslide, but honest, and pointed at precisely the checks I wrote the checklist for.
+Averaged by dimension, the deltas are honest and pointed: resilience +0.14, false-positive-avoidance
++0.10, correctness +0.09, and a tie on security and the categories where a strong model already does
+fine. Not a landslide. Real, and concentrated precisely on the rules I wrote.
 
-**The one imperfect skill score was the most useful cell on the board.** Security landed at 0.94,
-not 1.0, because the "hardcoded credential" test scored a four. The grader's words: the review
-"identifies the hardcoded live API key, explains the impact clearly, and provides two correct fixes
-using environment variables," but "does not explicitly recommend rotating the exposed key." That's
-the rubric working. A strong-but-incomplete review earns a four, not a rubber stamp, and it tells me
-the exact sentence to add.
+That "tie on the easy stuff" is the important caveat. Both arms run the same model, so on textbook
+cases (a plain SQL injection, an N+1 loop) the base model already scores a perfect 5 and the skill
+cannot beat it. The skill earns its keep on the cases that need specific knowledge or discipline the
+model won't reliably supply on its own. A control that ties on easy tests and separates on hard ones
+is the control working, not failing.
 
-There's a precision story too, not just detection. On a negative test, a correct three-line
-`Optional[int]` fragment, the bare model passed the criterion but couldn't stop itself: "Two issues:
-1. Missing `self` parameter... 2. Missing import for `Optional`..." It invented two out-of-scope
-nits about a fragment that was never meant to be a whole module. The skill, on the same snippet,
-"concludes with no issues found." Multiply those two stray nits across every file in a real PR and
-you get the noisy review nobody trusts. The precision gates exist to strip exactly that.
+## The graded rubric, catching incompleteness
+
+In an earlier run, one skill-on security test came in at four out of five instead of five. The
+review of a hardcoded API key "identifies the hardcoded live API key, explains the impact clearly,
+and provides two correct fixes using environment variables," but "does not explicitly recommend
+rotating the exposed key." A binary pass/fail would have called that a win and moved on. The graded
+rubric docked it a point and told me the exact sentence to add. That is the whole reason I grade 1
+to 5 instead of pass/fail: it sees the difference between good and complete.
+
+## The test that was wrong (and why that's the point)
+
+Here's the part I didn't plan for, and the best argument for the whole approach.
+
+To measure precision, I added a "must not flag" test: a small pure function the reviewer should
+leave alone. My first version was a `to_snake_case` helper. The bare model "failed" it by flagging
+bugs, and I almost logged that as a precision win for the skill.
+
+Then I actually read the grader's reasoning. The bare model had pointed out that the function
+doubles underscores on input that already contains them (`foo_Bar` becomes `foo__bar`) and splits
+acronyms character by character. It was right. My "correct" function wasn't correct. The bare model
+had caught a real edge case, and my skill had "passed" the test by staying silent, which meant it
+had *missed* the bug and my rubric had rewarded it for the miss.
+
+The test didn't make sense, so I replaced the snippet with a genuinely bulletproof pure function (a
+Celsius-to-Fahrenheit conversion, no edge cases, no I/O) and re-ran. Now the skill scores a clean
+1.0 and the bare model a 0.75, docked for tacking on an optional type-check note the typed signature
+made unnecessary. A fair result on a fair test.
+
+I could have shipped the broken test and a flattering number. The eval, and the habit of reading the
+reason instead of the score, stopped me. That is exactly what evaluation is for: not to manufacture
+a win, but to keep me honest, including about my own tests.
 
 ## The bonus lesson: grade the grader
 
-One test embarrassed the harness in a useful way. On the first full baseline run, the tag-injection
-security test scored **0** with the note "Could not extract JSON from llm-rubric response." Not a
-model miss, a grader parsing failure. On a clean re-run the same answer scored **1.0**.
+One test embarrassed the harness in a useful way earlier: a security case scored 0 with the note
+"Could not extract JSON from llm-rubric response." Not a model miss, a grader parsing failure. On a
+clean re-run the same answer scored 1.0.
 
 That's why I have an eval *for the eval*. A separate skill,
 [`grade-the-grader`](skills/grade-the-grader/SKILL.md), periodically audits the grader itself: too
 lenient, too strict, wobbling run to run, or worst of all inverted on the negative tests so it
-quietly rewards fabrication. An eval you never audit drifts just like a prompt does. The rule I
-follow: if the grader is broken, fix it before you believe a single trend line. That stray 0 would
-have looked like a real regression if I'd trusted the number instead of reading the reason.
+quietly rewards fabrication. An eval you never audit drifts just like a prompt does. If the grader
+is broken, fix it before you believe a single trend line. That stray 0 would have looked like a real
+regression if I'd trusted the number instead of reading the reason.
 
 ## The loop for the things a unit test can't reach
 
@@ -142,19 +163,20 @@ a rule. Then the eval runs again to prove the change did what I claimed.
 Two guardrails keep it from overfitting. The sensors that log gaps can't edit the rules; only the
 retrospective does, and only on recurrence, so one reviewer's pet peeve never becomes doctrine. And
 no rule change is trusted until the eval re-run backs it up: a miss becomes a failing test first, and
-the rule is what turns it green. This is also how I "evaluate" the big agents that are too expensive
-to unit-test end to end. I don't score the whole pipeline; I let real usage surface the gaps and
-feed them back in.
+the rule is what turns it green. This is also how I handle the big agents that are too expensive to
+unit-test end to end. I don't score the whole pipeline; I let real usage surface the gaps and feed
+them back in.
 
 ## Where I'm taking it next
 
 I'm not going to pretend this is finished.
 
-The snippet tests are still too easy on the categories where the base model is strong, which is why
-half my dimensions tie the baseline. The fix is harder cases: real multi-file diffs, a bug whose
-twin two functions down went unpatched, escaping validated against an actual query engine, the
-context a five-line snippet can't carry. That's where the skill should pull further ahead, and it's
-the next batch of tests I owe the suite.
+The snippet tests still tie on the categories where the base model is strong, which caps how much
+lift a single-file test can show. The real separation lives in cases a five-line snippet can't
+carry: multi-file diffs, a bug whose twin two functions down went unpatched, escaping validated
+against an actual query engine. When I added a sibling-parity test (one search method escapes user
+input, its twin doesn't), both arms caught it, because the two methods still fit in one snippet. The
+harder version, where the unescaped twin is in another file, is the next thing I owe the suite.
 
 The green board stays a standing risk. Until the suite has cases the skill genuinely struggles with,
 a perfect score says more about the exam than the student. The cure is adding failing tests on
@@ -165,10 +187,12 @@ stop logging gaps after the PRs I review. The mechanism is built; the discipline
 
 ## The takeaway
 
-Evaluating a skill isn't about the 27 out of 27. A perfect score on an easy suite is a warning to
+Evaluating a skill isn't about the 29 out of 29. A perfect score on an easy suite is a warning to
 write harder tests, not a trophy. The value is in the specifics the eval surfaced: the bare model
-missing a retry, softening a data-loss bug into a perf note, over-nitpicking a fragment, and a grader
-that dropped a score for the wrong reason. Each of those is a concrete thing I can fix or defend.
+missing a retry, softening a data-loss bug into a perf note, over-flagging correct Rust, a grader
+that dropped a score for the wrong reason, and a "correct" test snippet that turned out to have a
+real bug in it. Every one of those is a concrete thing I could fix or defend.
 
 That's the difference between a prompt and production code. Not that it's perfect. That when it
-breaks, you find out first, and you can point at exactly what broke.
+breaks, whether it's the skill, the grader, or the test itself, you find out first, and you can point
+at exactly what broke.

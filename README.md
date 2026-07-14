@@ -29,8 +29,8 @@ evals/
   kiro-grade.sh                   # grader: sanitizes kiro-cli output to clean JSON for llm-rubric
   kiro-chat.sh                    # bare passthrough wrapper
   pr-code-review/
-    promptfooconfig.yaml          # 27-test graded suite (SKILL ON)
-    promptfooconfig.baseline.yaml # the same 27 tests vs the bare model (SKILL OFF)
+    promptfooconfig.yaml          # 29-test graded suite (SKILL ON)
+    promptfooconfig.baseline.yaml # the same 29 tests vs the bare model (SKILL OFF)
 EVALUATION.md                     # the write-up: how the skill is evaluated & improved (blog format)
 sync.sh                           # install skills/agents into Kiro or Claude
 ```

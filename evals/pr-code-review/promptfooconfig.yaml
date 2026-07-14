@@ -585,6 +585,49 @@ tests:
         value: "Identifies a license-compatibility problem: adding a GPL-3.0 dependency to an MIT-licensed project can impose copyleft obligations incompatible with MIT distribution. Recommends verifying the license, seeking an MIT/BSD/Apache-licensed alternative, or consulting on licensing before adding it. A review that ignores the license issue fails."
         metric: licensing
 
+  # ─── HARD CASES: designed to have headroom over a bare model ────────────────
+
+  # Sibling-parity: escaping applied to one query builder but not its twin
+  # (checklist rule: "Same-pattern sibling sweep")
+  - description: "escaping applied in one search method but not its sibling"
+    vars:
+      prompt: |
+        Review this Python module. Both functions build ValkeySearch/RediSearch TAG queries from user input:
+        ```python
+        def _escape_tag(value: str) -> str:
+            specials = r',.<>{}[]"\':;!@#$%^&*()-+=~|/ '
+            for ch in specials:
+                value = value.replace(ch, "\\" + ch)
+            return value
+
+        def search_by_category(client, category: str) -> list:
+            query = f"@category:{{{_escape_tag(category)}}}"
+            return client.ft("idx").search(query)
+
+        def search_by_owner(client, owner: str) -> list:
+            query = f"@owner:{{{owner}}}"
+            return client.ft("idx").search(query)
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that search_by_owner interpolates `owner` directly into the TAG query WITHOUT the _escape_tag() that its sibling search_by_category applies — a partial fix that leaves a query-injection hole in the second method. The core finding must be the missing-on-the-sibling escaping (parity), not merely a generic 'escape user input' remark. Recommends applying _escape_tag() (or equivalent) in search_by_owner too. A review that only praises search_by_category's escaping, or flags injection generically without noticing the sibling is unescaped, does not satisfy the criterion."
+        metric: security
+
+  # Precision on a correct pure fragment — must not fabricate or demand out-of-scope hardening
+  # (skill rule: scope discipline — do NOT flag missing error handling/validation on non-I/O code)
+  - description: "negative — correct pure function, no fabricated issues"
+    vars:
+      prompt: |
+        Review this Python function:
+        ```python
+        def celsius_to_fahrenheit(celsius: float) -> float:
+            return celsius * 9 / 5 + 32
+        ```
+    assert:
+      - type: llm-rubric
+        value: "This is a correct, self-contained pure function with a typed `float` parameter and no I/O. The formula (celsius * 9 / 5 + 32) is correct, uses float division, and has no hidden edge cases. PASS only if the review does NOT fabricate correctness or security issues and does NOT demand out-of-scope hardening — it must not insist on runtime type/None validation (the parameter is typed `float`), exception handling, logging, or input-range checks for a pure arithmetic helper, and must not invent a logic or operator-precedence bug in the (correct) formula. At most one clearly-optional micro-suggestion (e.g. adding a docstring) is acceptable. FAIL if it presents missing validation/error-handling as a real issue, invents a bug, or pads the review with out-of-scope defensive requirements."
+        metric: false-positive-avoidance
+
 # ─── Intentionally NOT covered by snippet tests ─────────────────────────────
 # The following review-checklist categories require project-level context that a
 # self-contained code snippet cannot supply, so they are exercised by full
