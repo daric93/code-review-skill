@@ -1,6 +1,6 @@
 # The code reviewer that reviews itself
 
-*Why I put a test suite behind an AI code-review skill, how it works, and what it still can't tell me.*
+*Why I put a test suite behind an AI code-review skill, how it works, and how I keep myself honest about what it's worth.*
 
 ---
 
@@ -9,29 +9,45 @@
 The first version of my code-review skill was a prompt. A good one, I thought. It caught SQL
 injection, spotted a missing timeout, wrote tidy comments. I shipped it and moved on.
 
-Then a model update landed, and a week later I noticed the reviews felt thinner. Not broken,
-just... softer. Fewer real findings, a couple of confident remarks about code that was fine. I had
-no way to know whether the skill had actually gotten worse or whether I was imagining it, because I
-had never written down what "good" meant. There was no before to compare the after to.
+Then a model update landed, and a week later the reviews felt thinner. Not broken, just softer.
+Fewer real findings, a couple of confident remarks about code that was fine. I had no way to know
+whether the skill had actually regressed or whether I was imagining it, because I had never written
+down what "good" meant. There was no *before* to compare the *after* to.
 
-That is the problem with prompts. They look like text, so we treat them like text: write once,
-tweak by vibes, never test. But a review skill is not a blog draft. It makes judgment calls that a
-human would otherwise make, and those calls drift as the model underneath it changes. If I would
-never ship application code without tests, why was I shipping the thing that reviews the code
-without any?
+That is the trap with prompts. They look like text, so we treat them like text: write once, tweak
+by vibes, never test. But a review skill is not a blog draft. It makes the judgment calls a human
+reviewer would otherwise make, and those calls drift as the model underneath them changes. If I
+would never ship application code without tests, why was I shipping the thing that reviews the code
+with nothing behind it?
 
 So I stopped treating the skill like a prompt and started treating it like production code. It has
-a test suite, a measured baseline, a graded rubric, and a feedback loop. This is the story of how
-that fits together, and, just as importantly, where it falls short.
+a test suite, a measured baseline, a graded rubric, and a feedback loop. This is how that fits
+together, what it proves, and what it honestly can't.
 
-## What a reviewer is actually being graded on
+## What the skill is actually for
 
-Before writing a single test, I had to be honest about how a reviewer fails, because it fails in
-two directions and most people only measure one.
+It's worth being clear up front about what this skill is, because it changes what "does it work?"
+even means.
+
+The skill is not a cleverer way to ask a model "is there a bug here." Any strong model will find an
+obvious bug in a five-line snippet. The skill is the machinery *around* that: it pulls the full PR
+and the linked ticket, reads the changed files in context, applies the same written rulebook on
+every single run, delegates a dedicated security pass, then runs each candidate finding through
+precision gates (verify it against the real code, drop the style nitpicks, never post something it
+can't prove) before it posts inline comments as a pending review I approve. Then it logs what it
+found so the whole thing can learn from what it missed.
+
+In other words, the value proposition was never "beat a base model at spotting textbook SQL
+injection." It's consistency, precision, a complete review workflow, and a skill that improves from
+real reviewer feedback instead of my mood that day. Keep that in mind, because it's exactly what a
+naive eval fails to measure.
+
+## What a reviewer is graded on
+
+A reviewer fails in two directions, and most people only measure one.
 
 The obvious one is **misses**. The review skips the injection, waves past the race condition,
-doesn't notice the connection that never gets closed. Low recall. Easy to understand, easy to test
-for.
+doesn't notice the connection that never gets closed. Low recall. Easy to understand, easy to test.
 
 The one everybody forgets is **false positives**. The review flags correct code, or pads a
 three-line snippet with irrelevant nitpicks, and now the two real issues are buried under ten fake
@@ -39,35 +55,32 @@ ones. Low precision. This is the failure that actually kills a review tool, beca
 can't trust is worse than no reviewer at all. One hallucinated comment and the author stops reading
 the rest.
 
-So the whole eval is built around both axes. For every category of bug the skill *should* catch,
-there is a matching test of correct code it must *not* touch. Recall and precision get equal
-billing, because in the real world they trade off against each other and you have to watch both.
+So the eval gives both equal billing. For every category of bug the skill *should* catch, there is
+a matching test of correct code it must *not* touch. Recall and precision trade off against each
+other in the real world, and you have to watch both at once.
 
 ## How it works
 
-The harness is [promptfoo](https://promptfoo.dev). Each test is a small code snippet and a single,
-specific expectation, like "identifies the race condition when `increment` is called concurrently."
-The nice part is that both halves run through `kiro-cli`: the skill generates the review, and a
-second `kiro-cli` call grades it. No extra API keys, no separate billing, just my existing
-subscription doing double duty as author and examiner.
+The harness is [promptfoo](https://promptfoo.dev). Each test is a code snippet and one specific
+expectation, like "identifies the race condition when `increment` is called concurrently." Both
+halves run through `kiro-cli`: the skill generates the review, and a second call grades it. No
+extra API keys, just my existing subscription acting as both author and examiner.
 
-The grading is where most eval setups get lazy, so this is the part I care about most. A plain
-pass/fail hides slow decay: a review that vaguely gestures at the bug "passes," and you never see
-quality erode until it's bad. Instead every review is scored on a **1 to 5 scale** and normalized
-to a 0-to-1 number. Five means it named the issue precisely, explained the impact, and gave a
-correct fix with no noise. Three means it sort of mentioned the thing or gave a weak fix. One means
-it missed entirely, or, on a "must not flag" test, fabricated the problem it was supposed to ignore.
-The pass line sits at 0.75, so a review only clears the bar at a genuine four out of five. A
-mediocre three fails the gate *and* shows up as a sagging score, which is exactly the early warning
-I was missing when my prompt quietly rotted.
+Grading is where most eval setups get lazy, so it's the part I care about most. Plain pass/fail
+hides slow decay: a review that vaguely gestures at the bug "passes," and you never see quality
+erode until it's bad. So every review is scored 1 to 5 and normalized to a 0-to-1 number. Five
+means it named the issue precisely, explained the impact, and gave a correct fix with no noise.
+Three means it half-mentioned the thing or gave a weak fix. One means it missed entirely, or, on a
+"must not flag" test, invented the problem it was supposed to ignore. The pass line sits at 0.75, so
+a review only clears the bar at a real four out of five. A mediocre three fails the gate *and* shows
+up as a sagging score, which is exactly the early warning I lacked when my prompt quietly rotted.
 
-Every test also gets a category tag, so the results come back as a scorecard by dimension
-(security, correctness, resilience, precision, and so on) rather than one averaged number that
-means nothing.
+Every test also carries a category tag, so results come back as a scorecard by dimension (security,
+correctness, resilience, precision, and so on) instead of one averaged number that means nothing.
 
-## Why I trust it (and why I still don't fully)
+## Why I trust it, and why I still don't fully
 
-Here is a real run, from July 3rd, across 27 tests:
+Here's a real run from July 3rd, across 27 tests:
 
 | Metric | Tests | Avg |
 |---|---|---|
@@ -79,57 +92,55 @@ Here is a real run, from July 3rd, across 27 tests:
 | performance | 1 | 1.00 |
 | licensing | 1 | 1.00 |
 
-Twenty-seven for twenty-seven. Which is precisely when I get suspicious, because an all-green board
-is also what a broken, too-lenient grader produces. A perfect score is not proof the skill is good.
-It might be proof the exam is easy.
+Twenty-seven for twenty-seven, which is precisely when I get suspicious. An all-green board is also
+what a broken, too-lenient grader produces. A perfect score is not proof the skill is good; it might
+be proof the exam is easy.
 
-Two things keep me honest here.
+Two things keep me honest. First, the one imperfect score is the most useful cell on the board.
+Security landed at 0.94 because the "hardcoded credential" test scored a four, not a five. The
+grader's words: the review "identifies the hardcoded live API key, explains the impact clearly, and
+provides two correct fixes using environment variables," but "does not explicitly recommend rotating
+the exposed key." That's the rubric doing its job. A strong-but-incomplete review earns a four, not
+a rubber stamp, and it tells me the exact sentence to add to make that dimension green.
 
-The first is that the one imperfect score is the most useful data point on the board. Security came
-in at 0.94 because the "hardcoded credential" test scored a four, not a five. The grader's own words:
-the review "identifies the hardcoded live API key, explains the impact clearly, and provides two
-correct fixes using environment variables," but "does not explicitly recommend rotating the exposed
-key." That is the rubric working as intended. A strong-but-incomplete review gets a four, not a
-rubber-stamp five, and it tells me the exact sentence to add if I want that dimension green.
+Second, I built an eval for the eval. A separate skill,
+[`grade-the-grader`](skills/grade-the-grader/SKILL.md), periodically audits the grader itself: too
+lenient, too strict, wobbling run to run, or worst of all inverted on the negative tests so it
+quietly rewards fabrication. An eval you never audit drifts just like a prompt does. The rule: if
+the grader is broken, fix it before you believe a single trend line.
 
-The second is that I built an eval for the eval. A separate skill,
-[`grade-the-grader`](skills/grade-the-grader/SKILL.md), periodically audits the grader itself: is it
-too lenient, too strict, wobbling run to run, or, worst of all, inverted on the negative tests so it
-quietly rewards fabrication? An eval you never audit drifts just like a prompt does. The rule I
-follow is simple: if the grader is broken, fix the grader before you believe a single trend line.
+## The control, and the limit I'll own
 
-## The control that told me the truth
+A score on its own doesn't prove the *skill* did anything rather than the base model. The only way
+to know is a control, so the suite ships two arms that differ by exactly one variable: same model,
+same tests, same grader, with the skill's checklist and precision gates switched on, then off.
 
-A score on its own doesn't prove the *skill* did anything. Maybe the base model is just good and the
-skill is decoration. The only way to know is a control, so the suite ships two arms that differ by
-exactly one variable: same model, same tests, same grader, with the skill's checklist and precision
-gates switched on, and then off.
+I ran the "off" arm on July 13th expecting a comfortable lift, and the bare model tied the skill:
+seven for seven, every dimension at 1.00.
 
-I ran the "off" arm on July 13th, expecting to show a comfortable lift. Instead the bare model tied
-the skill: seven for seven, every dimension at 1.00. No detection lift at all.
+That result is not "the skill is useless." It's "these seven tests are too easy to tell the two
+apart." They're clean, single-bug snippets, and a strong modern model solves those on its own. That
+is a limitation of my test set, not a verdict on the skill, and it points straight at where the eval
+needs harder material. Where the skill actually earns its keep, full multi-file diffs, a bug whose
+twin two functions down went unpatched, escaping that's only wrong against the engine's real spec,
+is exactly what a five-line snippet can't express.
 
-I could have buried that. I kept it, because it is the most instructive result I have. These test
-snippets are deliberately clean, single-bug cases, and a strong modern model already solves those on
-its own. A baseline that ties isn't a failure of the skill. It's the eval telling me these
-particular tests don't discriminate on detection, so if the skill adds value, the value lives
-somewhere these tests aren't looking.
-
-And it does show up, just not in the pass/fail column. It shows up in the *shape* of the answers. On
-the negative `Optional[int]` test, a bare three-line fragment, the raw model passed the criterion
-but couldn't help itself:
+And even on these trivial cases, the difference was visible in the *shape* of the answers, not the
+score. On the negative `Optional[int]` test, a bare three-line fragment, the raw model passed the
+criterion but couldn't stop itself:
 
 > *"Two issues: 1. Missing `self` parameter... 2. Missing import for `Optional`... No other issues,
 > the None guard before assignment is correct."*
 
-It got the real question right, then invented two out-of-scope nits about a fragment that was never
-meant to be a complete module. The skill, graded on the same snippet, "concludes with no issues
-found." That gap is the whole point. On easy cases the difference between the skill and the raw
-model isn't recall, it's the noise the skill refuses to emit. And noise is exactly what erodes trust
-at scale.
+It answered the real question correctly, then invented two out-of-scope nits about a fragment that
+was never meant to be a complete module. The skill, on the same snippet, "concludes with no issues
+found." That gap is the point. Multiply those two stray nits across every file in a real PR and you
+get the noisy review nobody trusts. The precision gates exist to strip exactly that, and here is the
+control showing, in the model's own output, what they strip.
 
-So the baseline reframed my own eval for me: on trivial snippets its job is regression detection and
-precision protection, not proving lift. Proving lift needs harder material, which brings me to the
-part that isn't a unit test at all.
+So the baseline did its job. It stopped me from claiming a detection win I didn't earn, and it
+proved the one thing I can measure at snippet scale, precision, is real. The rest of the skill's
+value, the workflow and the consistency, lives in the loop below, where the real evidence is.
 
 ## The loop that actually improves it
 
@@ -138,41 +149,43 @@ next. For that I use the one source of truth I can't fake: what other reviewers 
 pull requests I review.
 
 When I review a PR and a maintainer flags something I missed, that miss is a real gap, not a
-synthetic one. A companion skill logs it, along with the false positives where someone pushed back
-on a comment of mine and was right. Every few PRs, a retrospective step reads the accumulated log,
-looks for gaps that show up in *more than one* PR, and only then edits the shared rulebook. A
-one-off stays a logged data point; a pattern becomes a rule. Then the eval runs again to prove the
-change did what I claimed.
+synthetic one. A companion skill logs it, along with false positives where someone pushed back on a
+comment of mine and was right. Every few PRs, a retrospective step reads the log, finds the gaps that
+show up in more than one PR, and only then edits the shared rulebook. A one-off stays a data point; a
+pattern becomes a rule. Then the eval runs again to prove the change did what I claimed.
 
-Two guardrails keep this from turning into overfitting. The sensors that log gaps are not allowed to
-edit the rules; only the retrospective does that, and only on recurrence, so one reviewer's pet
-peeve never becomes permanent doctrine. And no rule change is trusted until the eval re-run backs it
-up: a miss becomes a failing test first, and the rule is what turns it green.
+Two guardrails stop this from overfitting. The sensors that log gaps can't edit the rules; only the
+retrospective does, and only on recurrence, so one reviewer's pet peeve never becomes doctrine. And
+no rule change is trusted until the eval re-run backs it up: a miss becomes a failing test first, and
+the rule is what turns it green.
 
-## Where this still needs to get better
+## Where it needs to get better
 
-I'm not going to pretend this is finished.
+I won't pretend this is finished.
 
-The unit tests are too easy, and the tied baseline proved it. The honest fix is harder cases:
-multi-file diffs, bugs that only show up when you compare a change against its sibling code, the
-kind of context a snippet can't carry. Those are the cases where a skill should beat a bare model,
-and I'm not testing them yet.
+The unit tests are too easy, and the tied baseline proved it. The fix is harder cases: multi-file
+diffs, sibling-parity bugs, escaping validated against a real query engine, the context a snippet
+can't carry. That's where the skill should beat a bare model, and it's where I need to be running the
+comparison next.
 
 The green board is a standing risk. Until the suite has cases the skill genuinely struggles with, a
-perfect score tells me more about the difficulty of the exam than the strength of the student.
-Adding failing tests on purpose, straight from real review misses, is the cure.
+perfect score says more about the difficulty of the exam than the strength of the student. The cure
+is adding failing tests on purpose, drawn straight from real review misses.
 
-And the loop only works if I actually run it. The whole feedback system is worthless the week I get
-busy and stop logging gaps after the PRs I review. The mechanism is built; the discipline is the
-hard part, and it's on me.
+And the loop only works if I run it. The feedback system is worthless the week I get busy and stop
+logging gaps. The mechanism is built; the discipline is on me.
 
 ## The takeaway
 
-None of this is about the 27 out of 27. A perfect score on an easy test suite is not an
-achievement, it's a warning to write harder tests. The real win is much smaller and much more
-valuable: the next time the skill regresses, because of a model bump or a rule that got too
-aggressive, I'll see it as a specific number dropping on a specific dimension, and I'll catch it in
-an eval run instead of discovering it in a review I already posted.
+The skill's job was never to out-detect a base model on a five-line snippet. It's to turn a
+one-off, mood-dependent prompt into a consistent, precise, full-workflow reviewer that gets better
+from real feedback, and the eval is how I keep that honest instead of hopeful.
+
+The 27 out of 27 isn't the achievement, and the tied baseline isn't the failure. Both are the
+system working: one telling me to write harder tests, the other stopping me from claiming a win I
+didn't earn. The real payoff is quiet. The next time the skill regresses, from a model bump or a
+rule that got too aggressive, I'll see it as a specific number dropping on a specific dimension and
+catch it in an eval run, instead of discovering it in a review I already posted.
 
 That's the difference between a prompt and production code. Not that it's perfect. That when it
 breaks, you find out first.
