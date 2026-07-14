@@ -30,7 +30,7 @@ evals/
   kiro-chat.sh                    # bare passthrough wrapper
   pr-code-review/
     promptfooconfig.yaml          # 27-test graded suite (SKILL ON)
-    promptfooconfig.baseline.yaml # representative subset (SKILL OFF) for the A/B
+    promptfooconfig.baseline.yaml # the same 27 tests vs the bare model (SKILL OFF)
 EVALUATION.md                     # the write-up: how the skill is evaluated & improved (blog format)
 sync.sh                           # install skills/agents into Kiro or Claude
 ```
