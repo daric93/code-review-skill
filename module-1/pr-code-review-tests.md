@@ -56,6 +56,28 @@ bare output never mentions that bare `except Exception` catches programming erro
 criterion was already in the test file, so the initial PASS was a grading error, not a criteria
 change. Corrected to FAIL. Criteria were not modified after seeing bare-prompt output.
 
+## RTCC Prompt Grading Results (Sonnet, 2026-07-15)
+
+Prompt: `module-1/pr-code-review.md` (RTCC v1)
+
+| Test Case | Bare Prompt | RTCC v1 | Change |
+|---|---|---|---|
+| 1. SQL Injection | PASS | PASS | — |
+| 2. Correct Rust Code (false positive) | FAIL | PASS | Fixed: no fabricated findings, states code is correct |
+| 3. Race Condition | PASS | PASS | — |
+| 4. Resource Leak | PASS | PASS | — |
+| 5. Silent Failure | FAIL | PASS | Fixed: explicitly names AttributeError/TypeError as swallowed programming errors |
+
+**Result: 5 of 5 pass.** Both previously-failing cases now pass.
+
+**What fixed Case 2:** The constraint "Do not fabricate issues based on hypothetical contexts"
+and the role framing "not a threat modeler inventing hypothetical attack scenarios" stopped the
+model from inventing speculative DoS/symlink findings on correct code.
+
+**What fixed Case 5:** The constraint "assess what exception types are actually caught and whether
+the catch scope is appropriate. Note when broad catches swallow programming errors" directly
+instructed the depth of analysis the bare prompt missed.
+
 ---
 
 ## Test Case 1: SQL Injection via String Interpolation
