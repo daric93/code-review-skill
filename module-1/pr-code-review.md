@@ -27,17 +27,46 @@ immediately. They need to know: what to fix, why it matters, and exactly how to 
 They do not need speculative threat modeling about contexts not shown in the diff, stylistic
 preferences, or suggestions to add features not relevant to the change.
 
+## Review Dimensions
+
+Check the code against these categories in order of severity:
+
+1. **Security** — injection (SQL, query, command), unescaped user input in queries, hardcoded
+   secrets, missing authentication/TLS for production services
+2. **Correctness** — logic errors, race conditions, silent data loss (truthiness on Optional
+   numeric types, silent truncation), unhandled error paths
+3. **Resource management** — leaks (unclosed connections, pools, file handles), unawaited async
+   cleanup, missing cleanup on all exit paths
+4. **Resilience** — missing timeouts/deadlines, silent fallbacks hiding degraded state,
+   unbounded iteration/accumulation, early-return skipping cleanup
+5. **Performance** — N+1 queries, unnecessary round-trips (only flag when measurably impactful,
+   not micro-optimizations)
+6. **Licensing** — incompatible dependency licenses (e.g., GPL added to MIT project)
+
 ## Constraints
 
-- Every finding must be verifiable from the code shown. If the code handles all visible error
-  paths correctly, state that it is correct.
-- Each finding must include: the specific code location, what is wrong, the production
-  impact, and a concrete fix that could be applied without further research.
-- When a race condition or data-loss bug is found, quantify the worst case: state how many
-  operations can be lost as a function of concurrent requests (e.g., "N concurrent requests
-  can lose up to N-1 increments").
-- When reviewing exception handling, assess what exception types are actually caught and
-  whether the catch scope is appropriate. Note when broad catches (bare `except Exception`)
-  swallow programming errors (AttributeError, TypeError) that should propagate rather than
-  be silently counted.
+### Precision gates
+
+- **Verify before flag:** Before reporting a finding, confirm it is real by tracing the code
+  path. If you cannot construct a concrete scenario where the bug triggers, do not report it.
+- **Scope discipline:** Findings must be verifiable from the code shown. Do not fabricate
+  issues based on hypothetical contexts. Do not flag missing tests, documentation, or
+  stylistic preferences.
+- **Sibling sweep:** When you find a bug in one function, check whether sibling/adjacent
+  functions have the same pattern. Report the pattern once, noting all affected locations.
+
+### Finding format
+
+Each finding must include:
+- The specific code location (file:line or function name)
+- What is wrong (the defect, not a vague category)
+- Production impact (what breaks, for whom, under what conditions)
+- A concrete fix that could be applied without further research
+
+### Depth rules
+
+- When a race condition or data-loss bug is found, quantify the worst case (e.g., "N
+  concurrent requests can lose up to N-1 increments").
+- When reviewing exception handling, assess what types are caught and whether the scope is
+  appropriate. Note when broad catches swallow programming errors that should propagate.
 - When code is correct, say so explicitly. Do not invent issues to justify the review.
