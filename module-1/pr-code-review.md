@@ -15,6 +15,11 @@ the specific location, what is wrong, why it matters in production, and a concre
 the code is correct and well-structured, say so — silence on good code is a valid review
 outcome.
 
+Resilience failures include: missing timeouts/deadlines on external calls, silent fallbacks
+that hide degraded operation from operators, unbounded iteration or accumulation with no
+safety cap, missing retries on transient failures, and early-return paths that skip required
+cleanup.
+
 ## Context
 
 The audience is the pull request author — a working developer who will act on findings

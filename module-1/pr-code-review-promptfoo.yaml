@@ -246,7 +246,7 @@ tests:
         ```
     assert:
       - type: llm-rubric
-        value: "Identifies that the fallback to InMemoryCache is silent — in a multi-node deployment the cache is no longer shared across nodes, which is a correctness problem. Recommends logging a warning that communicates the consequence (cache not shared), not just the cause (import failed)."
+        value: "Identifies that the fallback to InMemoryCache is problematic — either because it is silent (operators cannot see the degradation), or because the try/except scope is too broad (catches ImportError from constructor failures, not just missing package). Recommends any valid fix: logging a warning, narrowing the try/except to only the import statement, making the fallback opt-in, or surfacing the state via health checks."
         metric: resilience
       - type: llm-rubric
         value: "Does NOT suggest removing the fallback entirely (fallbacks are valid). The issue is the silence, not the fallback pattern itself."
@@ -276,7 +276,7 @@ tests:
         ```
     assert:
       - type: llm-rubric
-        value: "Identifies that a transient failure (network blip, broker unavailable) will cause the publish to fail with no retry or backoff. Recommends adding bounded retries with exponential backoff for transient errors."
+        value: "Identifies a resilience gap in this external publish call: EITHER that transient failures (network blip, broker unavailable) cause the publish to fail with no retry or backoff, OR that the call has no timeout and can hang indefinitely. Both are valid resilience findings for a fire-and-forget external call."
         metric: resilience
       - type: llm-rubric
         value: "Does NOT demand a full circuit-breaker or retry library for this small snippet — a reasonable retry/backoff suggestion is sufficient. Does NOT fabricate correctness bugs in the serialization or publish logic."
