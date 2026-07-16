@@ -122,6 +122,86 @@ prompt is already well-specified. Examination of the rubrics:
 target for Exercise 4: add a quantification instruction to the prompt and verify it causes
 this test to pass without regressing the others.
 
+## Exercise 4 — Iteration Record
+
+### Iteration 1 — 2026-07-16
+
+Hypothesis: "The correctness-depth assertion fails on both models because the prompt says
+'explain the production impact' but never instructs quantification of worst-case data loss."
+
+Change: Added to Constraints: "When a race condition or data-loss bug is found, quantify the
+worst case: state how many operations can be lost as a function of concurrent requests."
+
+Sonnet: 4/5 → 5/5 assertions passing
+Haiku:  4/5 → 5/5 assertions passing
+Failing assertions remaining: none
+
+## Green State (Sonnet) — 2026-07-16
+
+Sonnet score: 5/5 tests passing (15/15 assertions)
+Haiku score:  5/5 tests passing (15/15 assertions)
+Model Ladder delta at Green: 0 assertions
+Iterations from baseline: 1
+
+## Load-Bearing Audit — pr-code-review.md — 2026-07-16
+
+| Instruction | Predicted Load-Bearing Assertion | Tested | Result |
+|---|---|---|---|
+| "Do not flag code for missing tests, docs, or style" | None — candidate for removal | Yes | Removed — score held (10/10) |
+| "Do not fabricate issues based on hypothetical contexts..." (full sentence) | Case 2 false-positive-avoidance | Yes | Score held — redundant with other framing |
+| "not a linter, not a style guide enforcer, not a threat modeler" (role detail) | Case 2 false-positive-avoidance | Yes | Score held — redundant with constraints |
+| "scoped to what the diff reveals" (context paragraph) | Case 2 false-positive-avoidance | Yes | Score held — redundant with constraints |
+| "domain-appropriate primitive (Redis INCR...)" | Case 3 correctness-fix | Yes | Score held — models infer INCR already |
+| "quantify worst case... N-1 increments" | Case 3 correctness-depth | Yes | Load-bearing in trimmed prompt — Case 3 failed when removed alongside other cuts |
+| "except Exception swallows programming errors" | Case 5 resilience | Yes | Kept — Case 5 failed on both models without it |
+| "When code is correct, say so explicitly" | Case 2 false-positive-avoidance | Yes | Kept — Case 4 failed on Sonnet without it (unexpected) |
+
+**Instructions removed:** 4 (no-flag-tests, no-fabricate sentence, threat-modeler role
+detail, scope-to-diff context paragraph)
+
+**Instructions kept (load-bearing):** 5 (verifiable-from-code, location+impact+fix format,
+quantify-worst-case, exception-handling depth, say-correct-explicitly)
+
+**Prompt reduced from 48 lines to 33 lines** — every remaining sentence has a test that fails
+without it.
+
+## Model Ladder Audit — pr-code-review.md — 2026-07-16
+
+Starting delta: 0 assertions (Sonnet and Haiku identical at Green)
+
+No Haiku-only failures to diagnose. Both models pass all 15 assertions on the trimmed,
+load-bearing-audited prompt. This means:
+- The remaining instructions are explicit enough for Haiku to follow without inference
+- Sonnet is not silently filling gaps that Haiku misses on these test cases
+- Future test cases from unseen domains are the expected source of model-gap signals
+
+Final delta: 0 assertions
+Decision: No Haiku failures to address. The delta will be revisited when new test cases are
+added in Module 2 from unfamiliar code domains (the prompt was purpose-built for these 5).
+
+## Reflection
+
+1. **Most surprising load-bearing instruction:** "When code is correct, say so explicitly."
+   Expected it to be about Case 2 (false-positive); instead Case 4 (resource leak) on Sonnet
+   broke — without explicit "say correct if correct," the model apparently felt pressure to
+   find something wrong even in the DataService code and generated noise about the correct
+   `pool.acquire()` pattern.
+
+2. **Most surprising dead weight:** The fabrication constraint ("Do not fabricate issues based
+   on hypothetical contexts") — a 2.5-line instruction with an example. It was the most
+   detailed single constraint, yet entirely redundant once the role and task established the
+   intent. The model understood "catch real bugs" and "verifiable from the code" without needing
+   the anti-pattern spelled out separately.
+
+3. **What Haiku failures told about Sonnet inference:** Nothing yet — both models behave
+   identically on this prompt. The prompt is explicit enough to eliminate model-gap on these
+   cases. The real Sonnet-inference signal will come from unseen inputs where the prompt's
+   specificity doesn't directly match.
+
+4. **Gaps closed vs accepted:** No gaps to close (zero delta). Accepted that this prompt is
+   fully specified for its current 5 test cases. The next gap-surface opportunity is
+   Module 2's stress tests on unfamiliar domains.
+
 ---
 
 ## Test Case 1: SQL Injection via String Interpolation
