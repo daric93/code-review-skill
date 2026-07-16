@@ -103,6 +103,7 @@ For the complete checklist (escape contexts, token-separator behavior, deseriali
 - Edge cases tested (empty, null, error conditions, boundaries)?
 - Error paths tested (exception wrapping, connection failures, timeouts)?
 - **Test quality** (not just coverage): do tests actually fail when the code breaks? Any false positives? Simple, useful assertions?
+- **Sufficiency over completeness**: these test-quality checks exist to catch tests that assert *nothing* or the *wrong* thing — not to require exhaustive coverage. When the tests shown already assert observable behavior for the cases they target, treat them as adequate. Do NOT flag them for missing edge cases, parametrization, or extra scenarios unless a specific untested path is both visible in the code and materially risky. "Could add more tests" is not a finding.
 - Tests independent of each other and external systems (proper mocking/isolation)?
 - Test structure consistent with the project's patterns? Integration tests marked appropriately?
 - Compare coverage with equivalent existing implementations. Tests are code too — no unnecessary complexity.
