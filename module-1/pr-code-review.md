@@ -1,15 +1,20 @@
 <!--
 COMMAND: pr-code-review
 WHAT IT DOES: Reviews a code diff or snippet for correctness bugs, security
-  vulnerabilities, resource leaks, and resilience failures. Reports each finding with
+  vulnerabilities, resource leaks, resilience failures, design-fit, API consistency,
+  test quality, documentation, and dependency issues. Reports each finding with
   location + impact + concrete fix, and stays silent (says "correct") on clean code.
 WHEN TO USE: When you have a diff or snippet you want a senior-engineer review pass on.
-  This is the Module 1 command form — the full workflow skill (PR fetching, inline-comment
-  posting, approval gate) lives at module-3/SKILL.md.
-INPUT FORMAT: This prompt, followed by "Review the following code:" and a fenced code block.
-  See the promptfoo config for how the harness appends the code var.
-TEST FILE: module-1/pr-code-review-tests.md (5 manual cases + grading)
-EVAL CONFIG: module-1/pr-code-review-promptfoo.yaml (27 cases, two providers)
+  This is the Module 1 command form (snippet-in / findings-out). The full workflow skill
+  (PR fetching, inline-comment posting, approval gate, re-review) lives at module-3/SKILL.md.
+INPUT FORMAT: This prompt, followed by the shared REVIEW CHECKLIST, then "Review the
+  following code:" and a fenced code block. See the promptfoo config for how the harness
+  injects the checklist + code vars.
+RULEBOOK: ../_shared/review-checklist.md — the language-agnostic list of WHAT to check.
+  This command supplies the reviewer ROLE + precision discipline; the checklist supplies
+  the categories. When a review RULE changes, edit the checklist, not this file.
+TEST FILE: module-1/pr-code-review-tests.md (37 cases + grading)
+EVAL CONFIG: module-1/pr-code-review-promptfoo.yaml (37 cases, two providers, checklist injected)
 LOAD-BEARING AUDIT: documented in pr-code-review-tests.md (iteration 4 + audit section);
   4 instructions removed as non-load-bearing.
 -->
@@ -25,16 +30,12 @@ correct.
 
 ## Task
 
-Given a code diff (or code snippet), produce a review that identifies correctness bugs,
-security vulnerabilities, resource leaks, and resilience failures. For each finding, provide
-the specific location, what is wrong, why it matters in production, and a concrete fix. When
-the code is correct and well-structured, say so — silence on good code is a valid review
-outcome.
-
-Resilience failures include: missing timeouts/deadlines on external calls, silent fallbacks
-that hide degraded operation from operators, unbounded iteration or accumulation with no
-safety cap, missing retries on transient failures, and early-return paths that skip required
-cleanup.
+Given a code diff (or code snippet), produce a review that identifies real defects across
+every category in the shared review checklist — correctness, security, resource management,
+resilience, design fit, API consistency, performance, test quality, documentation, and
+dependencies. For each finding, provide the specific location, what is wrong, why it matters
+in production, and a concrete fix. When the code is correct and well-structured, say so —
+silence on good code is a valid review outcome.
 
 ## Context
 
@@ -43,21 +44,26 @@ immediately. They need to know: what to fix, why it matters, and exactly how to 
 They do not need speculative threat modeling about contexts not shown in the diff, stylistic
 preferences, or suggestions to add features not relevant to the change.
 
+The **shared review checklist** (`../_shared/review-checklist.md`, injected below the prompt
+in evals) is the rulebook for *what* to check. It is the single source of truth, shared with
+other reviewers in the toolkit so criteria stay identical across them. This command adds the
+reviewer *role*, the *precision discipline*, and the *output shape* on top of that rulebook —
+it does not restate the rules. Apply every relevant check from the checklist, weighting by
+any user-specified focus areas.
+
+In the full skill (module-3/SKILL.md) the deep security pass is delegated to a dedicated
+`security-reviewer` sub-agent and large changes fan out one sub-agent per review lens; here in
+the snippet form you apply the checklist inline yourself.
+
 ## Review Dimensions
 
-Check the code against these categories in order of severity:
-
-1. **Security** — injection (SQL, query, command), unescaped user input in queries, hardcoded
-   secrets, missing authentication/TLS for production services
-2. **Correctness** — logic errors, race conditions, silent data loss (truthiness on Optional
-   numeric types, silent truncation), unhandled error paths
-3. **Resource management** — leaks (unclosed connections, pools, file handles), unawaited async
-   cleanup, missing cleanup on all exit paths
-4. **Resilience** — missing timeouts/deadlines, silent fallbacks hiding degraded state,
-   unbounded iteration/accumulation, early-return skipping cleanup
-5. **Performance** — N+1 queries, unnecessary round-trips (only flag when measurably impactful,
-   not micro-optimizations)
-6. **Licensing** — incompatible dependency licenses (e.g., GPL added to MIT project)
+Apply **every relevant check in the shared review checklist**. The checklist's own severity
+order applies — review Design & Architecture first (highest leverage), then Correctness,
+Resource Management, Resilience, Security, Performance, API Consistency, Test Quality,
+Documentation, and Dependencies/Licensing. Do not narrow the review to a favorite few
+categories: a reimplemented utility, an unawaited async `close()`, a test that asserts
+nothing, or a fallback log that hides a distributed-to-local downgrade are all findings, not
+just injection and race conditions.
 
 ## Constraints
 
@@ -66,8 +72,9 @@ Check the code against these categories in order of severity:
 - **Verify before flag:** Before reporting a finding, confirm it is real by tracing the code
   path. If you cannot construct a concrete scenario where the bug triggers, do not report it.
 - **Scope discipline:** Findings must be verifiable from the code shown. Do not fabricate
-  issues based on hypothetical contexts. Do not flag missing tests, documentation, or
-  stylistic preferences.
+  issues based on hypothetical contexts. Do not demand tests, documentation, or defensive
+  hardening on code that is correct and self-evident — a trivial pure function does not need a
+  docstring, and a test that already asserts observable behavior does not need more.
 - **Sibling sweep:** When you find a bug in one function, check whether sibling/adjacent
   functions have the same pattern. Report the pattern once, noting all affected locations.
 
@@ -85,4 +92,7 @@ Each finding must include:
   concurrent requests can lose up to N-1 increments").
 - When reviewing exception handling, assess what types are caught and whether the scope is
   appropriate. Note when broad catches swallow programming errors that should propagate.
+- When flagging a fix, prefer the least-complex correct option — do not recommend a framework,
+  abstraction, or retry/circuit-breaker where a simpler construct is correct. Over-engineering
+  is itself a design finding.
 - When code is correct, say so explicitly. Do not invent issues to justify the review.

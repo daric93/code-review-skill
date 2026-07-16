@@ -20,9 +20,19 @@
 description: "pr-code-review skill eval — Module 1 baseline"
 
 prompts:
+  # The skill body references _shared/review-checklist.md as its rulebook. Mirroring the
+  # live eval (kiro-review.sh), we inject that checklist content into the prompt so the eval
+  # grades the skill AS DESIGNED — i.e. skill workflow + shared rulebook — rather than a skill
+  # that points at a file the model can't see. Every test sets both vars.
   - id: pr-code-review
     raw: |
       {{skill_prompt}}
+
+      ---
+
+      REVIEW CHECKLIST (the shared rulebook referenced above — apply every relevant check):
+
+      {{checklist}}
 
       ---
 
@@ -31,6 +41,10 @@ prompts:
       {{code}}
 
 defaultTest:
+  # checklist is the same for every test — set once here instead of in all 37 cases.
+  # (skill_prompt is left per-test so each case is self-documenting about what it feeds.)
+  vars:
+    checklist: file://../_shared/review-checklist.md
   options:
     provider: "exec: node ./claude.js"
 

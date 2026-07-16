@@ -482,3 +482,24 @@ the shared-checklist reference closes in the skill-expansion commit that follows
 Two of the ten (32, 37) are deliberately negative: bringing in a large recall-oriented checklist
 risks new false positives (demanding more tests, flagging trivial missing docstrings), so the
 expansion must close the recall gaps WITHOUT regressing precision. These guard that.
+
+### Green-phase result (Sonnet, checklist injected) — 2026-07-16
+
+Ran all 37 cases on Sonnet after wiring the skill to the shared checklist: **33/37 pass.**
+
+- **9 of 10 new parity cases pass** (28, 29, 30, 31, 33, 34, 35, 36, 37) — the recall gaps for
+  design-fit, API consistency, library-API contract, test quality, documentation, dependencies,
+  performance, and over-engineering are now closed by the checklist reference.
+- **Case 32 fails** (`false-positive-avoidance`): given two correct, well-asserted slugify
+  tests, the reviewer suggested additional/edge-case tests instead of staying silent. This is
+  the predicted risk — the checklist's "Test Quality & Coverage" section ("edge cases tested?
+  compare coverage with equivalent implementations") pulls the model toward demanding more of
+  already-adequate tests. **Real precision regression introduced by the expansion; addressed in
+  the next iteration.**
+- The other 3 failures (cases 4, 5, 7) are pre-existing flaky cases in the documented
+  grader-variance band (HTTP error-handling, silent-failure, async-context-manager), not
+  regressions from this change.
+
+Hypothesis for the fix: the skill's scope-discipline constraint needs an explicit test-quality
+carve-out — "do not demand more tests when existing tests already assert observable behavior" —
+strong enough to override the checklist's recall pull.
