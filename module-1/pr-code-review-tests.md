@@ -254,6 +254,24 @@ categories. Remaining variance is grading noise.
 | Instructions in prompt | 5 constraints + role/task/context |
 | Consistent pass rate | 90-96% (variance is grading, not skill)
 
+### Iteration 4 — Skill Structure Expansion — 2026-07-16
+
+Change: Expanded the flat constraint list into structured sections — review dimensions
+(severity-ordered: security → correctness → resource-management → resilience → performance
+→ licensing), precision gates (verify-before-flag, scope discipline, sibling sweep), finding
+format, and depth rules.
+
+Scores across 3 runs on the expanded prompt: 48/54, 47/54 (87-89%). Pre-expansion band was
+48-52/54. Within noise for the sample size — no regression, but no measured lift either. The
+expansion's value is structural (it makes the prompt extensible toward the full skill
+architecture), not score-driven.
+
+**Known grader variance:** The same prompt scores differently across runs (5-point band).
+The flakiest rubrics are the HTTP error-handling and silent-fallback cases, where the model
+produces a correct review that the grader scores 3/5 ("adequate") on some runs and 4/5
+("good") on others. This is a documented eval-quality finding — the production toolkit
+addresses it with a grade-the-grader meta-eval that audits grading consistency.
+
 ---
 
 ## Test Case 1: SQL Injection via String Interpolation
