@@ -1,3 +1,22 @@
+# =============================================================================
+# pr-code-review evaluation harness
+#
+# DOMAIN: Automated code review. The prompt under test (pr-code-review.md) reviews
+#   a code diff/snippet and must (a) catch real correctness/security/resource/resilience
+#   bugs and (b) stay silent on correct code.
+#
+# CONSTRAINTS BEING TESTED:
+#   - Recall: real bugs (SQLi, race conditions, resource leaks, silent failures) are caught,
+#     located, and given a concrete fix.
+#   - Precision (false-positive-avoidance): correct code is NOT flagged; no speculative
+#     threat-modeling, no style nitpicks, no fabricated issues. This is the harder half.
+#   - Depth: race/data-loss findings quantify worst case; exception-handling findings assess
+#     catch scope.
+#
+# PROVIDERS: two, for the Model Ladder (sonnet + haiku) — see providers block below.
+# GRADER: claude.js also backs the llm-rubric assertions.
+# RUN: cd this dir && promptfoo eval --no-cache
+# =============================================================================
 description: "pr-code-review skill eval — Module 1 baseline"
 
 prompts:

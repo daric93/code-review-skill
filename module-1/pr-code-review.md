@@ -1,3 +1,19 @@
+<!--
+COMMAND: pr-code-review
+WHAT IT DOES: Reviews a code diff or snippet for correctness bugs, security
+  vulnerabilities, resource leaks, and resilience failures. Reports each finding with
+  location + impact + concrete fix, and stays silent (says "correct") on clean code.
+WHEN TO USE: When you have a diff or snippet you want a senior-engineer review pass on.
+  This is the Module 1 command form — the full workflow skill (PR fetching, inline-comment
+  posting, approval gate) lives at module-3/SKILL.md.
+INPUT FORMAT: This prompt, followed by "Review the following code:" and a fenced code block.
+  See the promptfoo config for how the harness appends the code var.
+TEST FILE: module-1/pr-code-review-tests.md (5 manual cases + grading)
+EVAL CONFIG: module-1/pr-code-review-promptfoo.yaml (27 cases, two providers)
+LOAD-BEARING AUDIT: documented in pr-code-review-tests.md (iteration 4 + audit section);
+  4 instructions removed as non-load-bearing.
+-->
+
 # pr-code-review
 
 ## Role
