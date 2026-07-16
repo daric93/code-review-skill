@@ -320,6 +320,104 @@ tests:
         value: "Identifies that when the index is already gone the function returns early and SKIPS the key cleanup, leaving orphaned keys. The key cleanup should run unconditionally (not gated by dropindex success) so recovery is idempotent."
         metric: resilience
 
+  # --- Test Case 15: Missing HTTP Error Handling (correctness) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```javascript
+        async function fetchUserData(userId) {
+          const response = await fetch(`/api/users/${userId}`);
+          const data = await response.json();
+          return data;
+        }
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that failed HTTP responses (4xx/5xx) and network errors are not handled. fetch() does not reject on HTTP error status codes — it only rejects on network failures. The code proceeds to parse the response body even when the request failed."
+        metric: correctness
+      - type: llm-rubric
+        value: "Recommends checking response.ok or response.status before parsing, and handling network errors with try/catch around the fetch call."
+        metric: correctness
+
+  # --- Test Case 16: React Stale Closure (correctness) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```tsx
+        function UserList({ users }) {
+          const [filtered, setFiltered] = useState(users);
+          useEffect(() => {
+            setFiltered(users.filter(u => u.active));
+          }, []);
+          return <ul>{filtered.map(user => <li>{user.name}</li>)}</ul>;
+        }
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies the stale closure: useEffect has an empty dependency array but uses `users` from props, so the filter only runs on mount and never updates when `users` changes. Recommends adding `users` to the dependency array."
+        metric: correctness
+      - type: llm-rubric
+        value: "Identifies the missing key prop on list items (<li> elements in the map). Recommends adding a unique key attribute."
+        metric: correctness
+
+  # --- Test Case 17: Sync-over-Async (correctness) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        class SyncClient:
+            def fetch(self, url: str) -> dict:
+                loop = asyncio.get_event_loop()
+                return loop.run_until_complete(self._async_fetch(url))
+
+            async def _async_fetch(self, url: str) -> dict:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url) as resp:
+                        return await resp.json()
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that run_until_complete (or get_event_loop) fails with RuntimeError when called from within an already-running event loop. Recommends a valid remediation: asyncio.run_coroutine_threadsafe, running on a dedicated thread with its own loop, or asyncio.run() with caveats."
+        metric: correctness
+
+  # --- Test Case 18: Resource Leak — close() Misses _pool (resource management) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        class DBClient:
+            def __init__(self, url: str):
+                self._conn = create_connection(url)
+                self._pool = create_pool(url)
+
+            def close(self):
+                self._conn.close()
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that close() only cleans up _conn and leaks _pool. Every resource initialized in __init__ must have a cleanup path. Recommends adding self._pool.close() (or equivalent) to the close() method."
+        metric: resource-management
+
+  # --- Test Case 19: Unawaited Async Close (resource management) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```typescript
+        class CacheClient {
+          private client: GlideClient;
+          constructor(client: GlideClient) {
+            this.client = client;
+          }
+          async dispose(): Promise<void> {
+            this.client.close();  // close() returns a Promise
+          }
+        }
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that client.close() returns a Promise that is not awaited, so dispose() resolves before the connection is actually closed — risking a half-open connection or the process exiting before cleanup completes. Recommends await this.client.close()."
+        metric: resource-management
+
   # --- Test Case 5: Silent Failure (resilience) ---
   - vars:
       skill_prompt: file://pr-code-review.md
