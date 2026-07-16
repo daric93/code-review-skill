@@ -153,6 +153,85 @@ tests:
         value: "The review mentions the specific connection count from the code (min_size=5, max_size=20) when explaining the leak impact — e.g., '5 to 20 connections remain open' or 'up to 20 connections leaked'. It does not just say 'connections are leaked' without referencing the pool size parameters."
         metric: resource-management-depth
 
+  # --- Test Case 6: Correct Optional[int] Check (false positive avoidance) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def set_limit(self, limit: Optional[int] = None) -> None:
+            if limit is not None:
+                self._limit = limit
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review does NOT flag this code as buggy. The use of 'is not None' is correct for Optional[int] where 0 is a valid value. A review that claims this check is wrong, or suggests 'if limit:' instead, is a false positive."
+        metric: false-positive-avoidance
+      - type: llm-rubric
+        value: "The review states the code is correct, or that no issues were found. Any suggestions offered are clearly marked as optional/minor, not presented as bugs."
+        metric: false-positive-avoidance
+
+  # --- Test Case 7: Correct Async Context Manager (false positive avoidance) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        async def fetch_data(url: str) -> dict:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    resp.raise_for_status()
+                    return await resp.json()
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review does NOT fabricate resource leak issues. The code correctly uses async context managers for both session and response, and raise_for_status() correctly surfaces HTTP errors. A review claiming a leak or missing error handling here is a false positive."
+        metric: false-positive-avoidance
+      - type: llm-rubric
+        value: "The review acknowledges the code is correct. Creating a ClientSession per call MAY be noted as a performance consideration, but only if clearly framed as an optional optimization — not as a bug or resource leak."
+        metric: false-positive-avoidance
+
+  # --- Test Case 8: Secret Correctly Loaded From Env (false positive avoidance) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        import os
+        import requests
+
+        def charge(amount: int):
+            api_key = os.environ.get("PAYMENTS_API_KEY")
+            if not api_key:
+                raise RuntimeError("PAYMENTS_API_KEY is not set")
+            return requests.post(
+                "https://api.payments.example/v1/charges",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={"amount": amount},
+                timeout=10,
+            )
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review does NOT claim the secret is hardcoded or insecurely stored. The key is correctly sourced from an environment variable with a clear error when unset, and a request timeout is set. A review inventing a credential-storage problem is a false positive."
+        metric: false-positive-avoidance
+      - type: llm-rubric
+        value: "The review does NOT present minor suggestions (logging, retries, type hints) as security issues or required changes. The code's security posture is acknowledged as sound."
+        metric: false-positive-avoidance
+
+  # --- Test Case 9: Correct Pure Function (false positive avoidance / scope discipline) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def celsius_to_fahrenheit(celsius: float) -> float:
+            return celsius * 9 / 5 + 32
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review does NOT demand runtime type/None validation, exception handling, logging, or input-range checks for this pure arithmetic function with a typed float parameter. Demanding defensive hardening on a pure helper is out-of-scope noise."
+        metric: false-positive-avoidance
+      - type: llm-rubric
+        value: "The review does NOT invent a logic or operator-precedence bug in the formula (celsius * 9 / 5 + 32 is correct and uses float division). It states the code is correct. At most one clearly-optional micro-suggestion (e.g., a docstring) is acceptable."
+        metric: false-positive-avoidance
+
   # --- Test Case 5: Silent Failure (resilience) ---
   - vars:
       skill_prompt: file://pr-code-review.md
