@@ -78,6 +78,50 @@ model from inventing speculative DoS/symlink findings on correct code.
 the catch scope is appropriate. Note when broad catches swallow programming errors" directly
 instructed the depth of analysis the bare prompt missed.
 
+## Promptfoo Baseline Run — 2026-07-15
+
+Config: `pr-code-review-promptfoo.yaml` (5 tests, 15 assertions total)
+
+| Model | Tests Passing | Failing Test |
+|---|---|---|
+| Sonnet | 4/5 | Case 3 (race condition) — correctness-depth assertion |
+| Haiku | 4/5 | Case 3 (race condition) — correctness-depth assertion |
+
+**Model Ladder delta: 0 assertions.** Both models fail on the same criterion — the
+quantification requirement ("at N concurrent requests, up to N-1 can be lost"). Both models
+describe the race abstractly ("counts can be lost under concurrency") but neither provides
+the specific numeric bound.
+
+### Delta hypotheses
+
+"The `correctness-depth` assertion fails on both models. My hypothesis: the RTCC prompt's
+constraint says 'explain the production impact' but never instructs the model to quantify
+worst-case data loss with a concrete bound. If I add a constraint like 'When a race condition
+can cause data loss, state the worst-case loss rate as a function of concurrent requests' to
+the Constraints section, I predict both models will pass this assertion."
+
+### Rubric examination (identical scores on both models)
+
+The guide flags a zero delta as suspicious: either the assertions don't discriminate, or the
+prompt is already well-specified. Examination of the rubrics:
+
+- The RTCC prompt was built in Exercise 2 directly against these 5 test cases, iterating until
+  all passed on Sonnet. The prompt is therefore unusually well-specified *for these specific
+  inputs* — each constraint exists because one of these cases failed without it.
+- The assertions do discriminate against the bare model (2/5 bare-prompt failures in Exercise 1)
+  and against depth (the correctness-depth assertion fails both models), so they are not
+  trivially passable.
+- What the zero delta means: on inputs the prompt was tuned against, Haiku can follow the same
+  explicit instructions Sonnet can. The model gap is expected to appear on *unseen* inputs and
+  under *instruction removal* — both of which Exercise 4's load-bearing audit and Model Ladder
+  test directly. If no delta appears there either, the rubrics need strengthening.
+
+### Weakest assertion
+
+`correctness-depth` on Case 3 is the only failing assertion across both models. Iteration
+target for Exercise 4: add a quantification instruction to the prompt and verify it causes
+this test to pass without regressing the others.
+
 ---
 
 ## Test Case 1: SQL Injection via String Interpolation

@@ -1,0 +1,181 @@
+description: "pr-code-review skill eval — Module 1 baseline"
+
+prompts:
+  - id: pr-code-review
+    raw: |
+      {{skill_prompt}}
+
+      ---
+
+      Review the following code:
+
+      {{code}}
+
+defaultTest:
+  options:
+    provider: "exec: node ./claude.js"
+
+providers:
+  - id: "exec: node ./claude.js"
+    label: "sonnet"
+    config:
+      model: sonnet
+  - id: "exec: node ./claude.js"
+    label: "haiku"
+    config:
+      model: haiku
+
+tests:
+  # --- Test Case 1: SQL Injection (security recall) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # app/db/queries.py
+        def search_users(name_filter: str) -> list[dict]:
+            query = f"SELECT id, email FROM users WHERE name LIKE '%{name_filter}%'"
+            return db.execute(query).fetchall()
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review identifies SQL injection: name_filter is interpolated directly into the SQL query string without parameterization. The review names the attack class (SQL injection) and explains the impact (arbitrary data access, modification, or deletion)."
+        metric: security
+      - type: llm-rubric
+        value: "The review provides a concrete parameterized-query fix that shows how the LIKE wildcards move into the parameter value (e.g., passing f'%{name_filter}%' as the parameter). Not just 'use parameterized queries' without showing the pattern."
+        metric: security-fix
+      - type: llm-rubric
+        value: "The review does NOT suggest input validation alone as a sufficient fix, and does NOT hallucinate additional vulnerabilities (such as authentication issues or missing error handling) that do not exist in this 3-line snippet."
+        metric: false-positive-avoidance
+
+  # --- Test Case 2: Correct Rust Code (false positive avoidance) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```rust
+        // src/config.rs
+        use std::fs;
+        use std::path::Path;
+
+        pub fn load_config(path: &Path) -> Result<Config, ConfigError> {
+            let content = fs::read_to_string(path)
+                .map_err(|e| ConfigError::Io { path: path.to_owned(), source: e })?;
+
+            let parsed: toml::Value = content
+                .parse()
+                .map_err(|e| ConfigError::Parse { path: path.to_owned(), source: e })?;
+
+            Config::from_toml(parsed)
+                .map_err(|e| ConfigError::Validation { path: path.to_owned(), source: e })
+        }
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review states that the code is correct, well-structured, or has no significant issues. It does NOT present speculative issues (like 'unbounded file read' or 'symlink traversal' or 'DoS') as findings — those are hypothetical threat models about contexts not shown in the diff."
+        metric: false-positive-avoidance
+      - type: llm-rubric
+        value: "The review does NOT suggest replacing the custom error type with anyhow or Box<dyn Error>, does NOT claim there is a 'missing error case' or 'unhandled error', and does NOT flag the code for missing tests."
+        metric: false-positive-avoidance
+
+  # --- Test Case 3: Race Condition (correctness) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # services/counter.py
+        class ViewCounter:
+            def __init__(self, redis_client):
+                self.redis = redis_client
+
+            async def increment(self, page_id: str) -> int:
+                current = await self.redis.get(f"views:{page_id}")
+                new_count = int(current or 0) + 1
+                await self.redis.set(f"views:{page_id}", new_count)
+                return new_count
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review identifies the race condition: between get and set, concurrent requests can read the same value and lose increments. It explains the impact in concrete terms (lost counts under concurrency)."
+        metric: correctness
+      - type: llm-rubric
+        value: "The review recommends Redis INCR (or INCRBY) as the atomic fix — not a Python-level asyncio.Lock (which doesn't protect across multiple processes in a distributed system)."
+        metric: correctness-fix
+      - type: llm-rubric
+        value: "The review does NOT fabricate an issue with 'int(current or 0)' for the None case — this is correct handling of a missing Redis key."
+        metric: false-positive-avoidance
+      - type: llm-rubric
+        value: "The review quantifies the race condition impact: at N concurrent requests hitting the same page_id simultaneously, up to N-1 increments can be lost in a single burst. The explanation must include a concrete numeric bound or worst-case formula, not just 'counts can be lost'."
+        metric: correctness-depth
+
+  # --- Test Case 4: Resource Leak (resource management) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # app/service.py
+        class DataService:
+            def __init__(self, db_url: str):
+                self.pool = asyncpg.create_pool(db_url, min_size=5, max_size=20)
+
+            async def start(self):
+                self.pool = await self.pool
+
+            async def query(self, sql: str, *args):
+                async with self.pool.acquire() as conn:
+                    return await conn.fetch(sql, *args)
+
+            async def stop(self):
+                await self.pool.close()
+        ```
+
+        Now the caller:
+
+        ```python
+        # app/main.py
+        async def run():
+            service = DataService("postgresql://localhost/mydb")
+            await service.start()
+            try:
+                result = await service.query("SELECT 1")
+            finally:
+                pass  # TODO: cleanup
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review identifies the resource leak: service.stop() is never called because the finally block is a no-op (pass). The connection pool's 5-20 connections remain open, potentially exhausting the database's connection limit."
+        metric: resource-management
+      - type: llm-rubric
+        value: "The review provides a concrete fix: either call 'await service.stop()' in the finally block, or restructure to use an async context manager (__aenter__/__aexit__)."
+        metric: resource-management-fix
+      - type: llm-rubric
+        value: "The review does NOT claim that 'async with self.pool.acquire()' is the leak (that correctly returns the connection to the pool), and does NOT suggest the pool itself is unnecessary."
+        metric: false-positive-avoidance
+      - type: llm-rubric
+        value: "The review mentions the specific connection count from the code (min_size=5, max_size=20) when explaining the leak impact — e.g., '5 to 20 connections remain open' or 'up to 20 connections leaked'. It does not just say 'connections are leaked' without referencing the pool size parameters."
+        metric: resource-management-depth
+
+  # --- Test Case 5: Silent Failure (resilience) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # workers/processor.py
+        async def process_batch(items: list[dict]) -> dict:
+            results = {"success": 0, "failed": 0}
+            for item in items:
+                try:
+                    await transform_and_store(item)
+                    results["success"] += 1
+                except Exception:
+                    results["failed"] += 1
+            return results
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review identifies silent failure: bare 'except Exception' catches without logging, preserving item identity, or distinguishing root causes. Operators cannot diagnose what failed or retry specific items."
+        metric: resilience
+      - type: llm-rubric
+        value: "The review notes that bare 'except Exception' catches programming errors (AttributeError, TypeError, KeyError) that indicate bugs and should propagate loudly rather than being silently counted as data failures."
+        metric: resilience
+      - type: llm-rubric
+        value: "The review does NOT claim the counting logic itself is buggy, and does NOT suggest the entire try/except pattern is wrong (per-item error isolation is valid; the issue is the silent swallowing)."
+        metric: false-positive-avoidance
