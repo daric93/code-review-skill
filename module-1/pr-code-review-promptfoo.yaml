@@ -418,6 +418,145 @@ tests:
         value: "Identifies that client.close() returns a Promise that is not awaited, so dispose() resolves before the connection is actually closed — risking a half-open connection or the process exiting before cleanup completes. Recommends await this.client.close()."
         metric: resource-management
 
+  # --- Test Case 20: ValkeySearch Tag Query Injection (security) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def search_by_tag(tag_value: str) -> list:
+            query = f"@category:{{{tag_value}}}"
+            return client.ft("idx").search(query)
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that tag_value is interpolated directly into the query without escaping, allowing query injection. Recommends escaping special characters (pipe, tilde, and other FT.SEARCH metacharacters)."
+        metric: security
+
+  # --- Test Case 21: Missing Timeout on Redis Client (resilience) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def create_client(host: str, port: int) -> redis.Redis:
+            return redis.Redis(host=host, port=port)
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that no timeout is configured on the connection. Missing timeouts can cause cascading hangs in production. Recommends setting socket_timeout and/or socket_connect_timeout."
+        metric: resilience
+
+  # --- Test Case 22: Hardcoded Credential (security) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        import requests
+
+        API_KEY = "key_9f8e7d6c5b4a3210fedcba9876543210"
+
+        def charge(amount: int):
+            return requests.post(
+                "https://api.payments.example/v1/charges",
+                headers={"Authorization": f"Bearer {API_KEY}"},
+                json={"amount": amount},
+            )
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that a live secret/API key is hardcoded in source. This leaks via VCS history, logs, and shared code. Recommends loading from an environment variable or secrets manager, and rotating the exposed key."
+        metric: security
+
+  # --- Test Case 23: Silent Truncation (correctness) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def get_recent_orders(db, customer_id: str) -> list:
+            return db.execute(
+                "SELECT * FROM orders WHERE customer_id = ? LIMIT 0, 10000",
+                (customer_id,),
+            )
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that the hardcoded 10000 limit silently truncates results — a customer with more than 10000 orders loses data with no error or warning. Recommends making the limit configurable, paginating, or logging a warning when the limit is hit."
+        metric: correctness
+
+  # --- Test Case 24: Optional[int] Truthiness Drops Zero (correctness) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def set_limit(self, limit: Optional[int] = None) -> None:
+            if limit:
+                self._limit = limit
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that 'if limit:' is wrong for an Optional[int] where 0 is valid — a caller passing 0 is silently ignored because 0 is falsy. Recommends 'if limit is not None:'."
+        metric: correctness
+
+  # --- Test Case 25: N+1 Query Pattern (performance) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def load_orders(db, user_ids: list[int]) -> dict[int, list]:
+            result = {}
+            for uid in user_ids:
+                result[uid] = db.execute(
+                    "SELECT * FROM orders WHERE user_id = ?", (uid,)
+                ).fetchall()
+            return result
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies the N+1 query pattern — one query per user_id means N round-trips that grow linearly with input size. Recommends a single batched query (WHERE user_id IN (...) or a JOIN) and grouping results in memory."
+        metric: performance
+
+  # --- Test Case 26: GPL Dependency in MIT Project (licensing) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```diff
+        # pyproject.toml
+         [project]
+         name = "widget-sdk"
+         license = { text = "MIT" }
+         dependencies = [
+           "httpx>=0.27",
+        +  "gpl-only-parser>=2.0",   # this library is licensed GPL-3.0
+         ]
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies a license-compatibility problem: adding a GPL-3.0 dependency to an MIT-licensed project can impose copyleft obligations incompatible with MIT distribution. Recommends verifying the license, seeking an alternative, or consulting before adding."
+        metric: licensing
+
+  # --- Test Case 27: Sibling-Parity Escaping Gap (security) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def _escape_tag(value: str) -> str:
+            specials = r',.<>{}[]"\':;!@#$%^&*()-+=~|/ '
+            for ch in specials:
+                value = value.replace(ch, "\\" + ch)
+            return value
+
+        def search_by_category(client, category: str) -> list:
+            query = f"@category:{{{_escape_tag(category)}}}"
+            return client.ft("idx").search(query)
+
+        def search_by_owner(client, owner: str) -> list:
+            query = f"@owner:{{{owner}}}"
+            return client.ft("idx").search(query)
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that search_by_owner interpolates owner directly into the TAG query WITHOUT the _escape_tag() that its sibling search_by_category applies — a partial fix that leaves a query-injection hole in the second method. The finding must be about the sibling inconsistency (parity), not just a generic 'escape user input' remark."
+        metric: security
+
   # --- Test Case 5: Silent Failure (resilience) ---
   - vars:
       skill_prompt: file://pr-code-review.md
