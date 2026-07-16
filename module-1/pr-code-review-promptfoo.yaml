@@ -602,3 +602,185 @@ tests:
       - type: llm-rubric
         value: "The review does NOT claim the counting logic itself is buggy, and does NOT suggest the entire try/except pattern is wrong (per-item error isolation is valid; the issue is the silent swallowing)."
         metric: false-positive-avoidance
+
+  # ===========================================================================
+  # FULL-PARITY EXPANSION (cases 28-37) — checklist categories not yet tested.
+  # Each targets a category from _shared/review-checklist.md that the first 27
+  # cases did not exercise: design-fit, API consistency, library-API contract,
+  # test quality, documentation, dependency pinning/licensing. Committed BEFORE
+  # the skill references the shared checklist (EDD red phase).
+  # ===========================================================================
+
+  # --- Test Case 28: Reimplemented Utility (design fit / codebase alignment) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # utils/text.py already exports slugify(). This new file re-adds it.
+        # api/handlers.py
+        def make_slug(title: str) -> str:
+            s = title.lower().strip()
+            s = re.sub(r"[^a-z0-9]+", "-", s)
+            return s.strip("-")
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review flags that make_slug reimplements functionality that already exists as utils.text.slugify (design-fit / duplication), and recommends using the existing utility rather than adding a parallel implementation. The finding is about codebase alignment / not-invented-here, not about the correctness of the regex."
+        metric: design-fit
+      - type: llm-rubric
+        value: "The review does NOT invent a correctness bug in the slug regex (it is a reasonable slug implementation). At most it notes the duplication and any minor edge case as optional."
+        metric: false-positive-avoidance
+
+  # --- Test Case 29: Inconsistent Constructor Signature (API consistency) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # Existing sibling stores in this package all take (self, *, client, namespace).
+        # This new store diverges in parameter order and naming.
+        class RedisVectorStore:
+            def __init__(self, conn, ns=None):
+                self.conn = conn
+                self.ns = ns
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review flags that RedisVectorStore.__init__ is inconsistent with sibling stores in the package: positional 'conn'/'ns' instead of the established keyword-only (client, namespace) convention. The finding is specifically about API consistency with sibling implementations."
+        metric: api-consistency
+
+  # --- Test Case 30: Unawaited Async close() (library API contract) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # glide client's close() returns a coroutine that must be awaited.
+        class Cache:
+            def __init__(self, client):
+                self._client = client
+
+            async def shutdown(self):
+                self._client.close()  # not awaited
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review identifies that self._client.close() returns a coroutine/awaitable that is never awaited, so cleanup does not actually complete (half-open connections, possible 'coroutine was never awaited' warning). The fix is to 'await self._client.close()'. This tests reasoning about the library's cleanup-method return type."
+        metric: library-api-contract
+
+  # --- Test Case 31: Test Does Not Assert Behavior (test quality) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # tests/test_charge.py
+        def test_charge_creates_record():
+            svc = ChargeService(FakeDB())
+            svc.charge(user_id=1, amount=500)
+            # no assertions
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review flags that test_charge_creates_record exercises the code path but asserts nothing, so it cannot fail when the behavior breaks (a false-confidence test). It recommends asserting the observable outcome (a record was created / balance changed / return value). The finding is about test QUALITY, not merely coverage."
+        metric: test-quality
+
+  # --- Test Case 32: Correct Test With Real Assertions (test quality FP guard) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # tests/test_slug.py
+        def test_slugify_lowercases_and_dashes():
+            assert slugify("Hello World!") == "hello-world"
+
+        def test_slugify_trims_edges():
+            assert slugify("  A B  ") == "a-b"
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review does NOT fabricate problems with these tests. They assert observable behavior with clear inputs/outputs and cover two distinct cases. A review demanding more tests, parametrization, or flagging these as inadequate is a false positive; at most a clearly-optional suggestion is acceptable."
+        metric: false-positive-avoidance
+
+  # --- Test Case 33: Misleading Fallback Log (documentation / operability) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        try:
+            from valkey_glide import GlideClient
+            cache = GlideClient(...)
+        except ImportError:
+            logger.info("valkey_glide unavailable")   # falls back to per-process dict
+            cache = {}
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review flags that the fallback log communicates only the cause ('valkey_glide unavailable') but not the operational CONSEQUENCE — that the cache is now a per-process in-memory dict NOT shared across nodes, which silently changes correctness in a distributed deployment. It recommends the log state the consequence, and ideally that INFO is too quiet for a degraded mode."
+        metric: documentation
+
+  # --- Test Case 34: Unpinned + Heavy Dependency (dependencies/licensing) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```toml
+        # pyproject.toml diff — a single leftpad-style need pulls in a huge unpinned dep
+        [project]
+        dependencies = [
+            "requests",
+            "pandas",   # added just to call pandas.isna() in one place
+        ]
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review flags at least one of: the dependencies are unpinned (no version constraints, hurting build reproducibility), OR pulling in pandas solely to call isna() in one place is a heavyweight dependency for a trivial need (a simple 'x is None or x != x' or stdlib check suffices). The finding is about dependency justification / pinning."
+        metric: dependencies
+
+  # --- Test Case 35: N+1 Query In A Loop (performance, real impact) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def load_orders(user_ids: list[int]) -> list[Order]:
+            orders = []
+            for uid in user_ids:
+                orders.append(db.query("SELECT * FROM orders WHERE user_id = ?", uid))
+            return orders
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review identifies the N+1 query pattern: one DB round-trip per user_id in the loop, which does not scale. It recommends a single batched query (WHERE user_id IN (...)) or equivalent. This is a measurable performance issue, not a speculative micro-optimization."
+        metric: performance
+
+  # --- Test Case 36: Over-Engineering (design fit — false positive guard) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # A PR that only needs to add two numbers, but adds a plugin framework.
+        class Operation(ABC):
+            @abstractmethod
+            def apply(self, a, b): ...
+
+        class AddOperation(Operation):
+            def apply(self, a, b): return a + b
+
+        class OperationRegistry:
+            _ops = {}
+            @classmethod
+            def register(cls, name, op): cls._ops[name] = op
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review flags over-engineering: an abstract base class, registry, and plugin indirection introduced for what the change actually needs (a simple addition). It recommends solving the problem that exists now rather than building a generic framework speculatively. The finding is about unnecessary complexity / YAGNI (design health)."
+        metric: design-fit
+
+  # --- Test Case 37: Missing Docstring On Correct Simple Code (FP / scope guard) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def clamp(value: float, lo: float, hi: float) -> float:
+            return max(lo, min(value, hi))
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review does NOT block or heavily flag this correct, self-evident one-line function for lacking a docstring. A docstring may be mentioned as a clearly-optional nit at most; treating missing documentation on trivially-obvious code as a required change is a scope/precision failure."
+        metric: false-positive-avoidance

@@ -449,3 +449,36 @@ async def process_batch(items: list[dict]) -> dict:
 - Must NOT only suggest "add logging" without explaining what to log (the item identity + the exception traceback, not just "an error occurred")
 - Must NOT claim the code has a bug in the counting logic — the counting itself is correct
 - Must NOT suggest the entire try/except pattern is wrong — batch processing with per-item error isolation is a valid pattern; the issue is the silent swallowing, not the structure
+
+---
+
+## Full-Parity Expansion (Cases 28–37) — 2026-07-16
+
+These 10 cases were added to exercise checklist categories the first 27 tests did not cover, so
+the certification skill reaches full parity with the live skill's shared rulebook
+(`_shared/review-checklist.md`). Written and committed **before** the skill was wired to
+reference that shared checklist — the red phase of this expansion.
+
+| # | Category tested | Kind | Checklist section it exercises |
+|---|---|---|---|
+| 28 | Reimplemented utility (slugify) | recall | Design & Architecture / codebase alignment |
+| 29 | Inconsistent constructor signature | recall | API Consistency |
+| 30 | Unawaited async `close()` | recall | Pre-check: Library API contracts + Resource Management |
+| 31 | Test asserts nothing | recall | Test Quality & Coverage |
+| 32 | Correct test with real assertions | false-positive | Test Quality (precision guard) |
+| 33 | Fallback log omits consequence | recall | Documentation & Comments / operability |
+| 34 | Unpinned + heavyweight dependency | recall | Dependencies, Build & Licensing |
+| 35 | N+1 query in a loop | recall | Performance (measurable impact) |
+| 36 | Over-engineered plugin framework | recall | Design & Architecture / complexity (YAGNI) |
+| 37 | Missing docstring on trivial code | false-positive | Documentation (scope/precision guard) |
+
+**Why these were failing before the expansion:** the Module-1 skill body (`pr-code-review.md`)
+inlined only six review dimensions (security, correctness, resource-management, resilience,
+performance, licensing). It had no design-fit, API-consistency, library-API-contract,
+test-quality, or documentation guidance — so cases 28–33 had no instruction to satisfy them,
+and the two new false-positive guards (32, 37) had no scope rule to lean on. These are the gaps
+the shared-checklist reference closes in the skill-expansion commit that follows.
+
+Two of the ten (32, 37) are deliberately negative: bringing in a large recall-oriented checklist
+risks new false positives (demanding more tests, flagging trivial missing docstrings), so the
+expansion must close the recall gaps WITHOUT regressing precision. These guard that.
