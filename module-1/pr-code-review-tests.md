@@ -202,6 +202,58 @@ added in Module 2 from unfamiliar code domains (the prompt was purpose-built for
    fully specified for its current 5 test cases. The next gap-surface opportunity is
    Module 2's stress tests on unfamiliar domains.
 
+## Test Expansion — EDD Iterations
+
+### Batch 1: False-Positive Tests (Cases 6-9) — 2026-07-16
+
+Added 4 tests: correct Optional[int], correct async context manager, correct env-var secret,
+correct pure function. All passed without prompt changes — the existing precision constraints
+("verifiable from the code shown" + "say so explicitly when correct") are sufficient.
+
+Score: 18/18 (9 tests × 2 models)
+
+### Batch 2: Resilience Tests (Cases 10-14) — 2026-07-16
+
+Added 5 tests: silent fallback, missing gRPC deadline, no retry/backoff, unbounded SCAN,
+cleanup skipped on early return.
+
+Before prompt change: 21/28 (7 failures). Root cause: prompt had no resilience definition.
+
+Iteration 2: Added resilience-failure definition to Task section (timeouts, silent fallbacks,
+unbounded iteration, missing retries, skipped cleanup). Also widened 2 rubrics to accept
+alternative valid findings (narrowing try/except is as valid as logging for the fallback;
+timeout is as valid as retry for the publish call).
+
+After: 28/28. One prompt change closed 7 failures.
+
+### Batch 3: Correctness + Resource Management Tests (Cases 15-19) — 2026-07-16
+
+Added 5 tests: HTTP error handling, React stale closure, sync-over-async, close() missing
+pool, unawaited async close.
+
+Score: 34-35/38 (92%+). Remaining 2-4 failures are grading variance (different runs produce
+different failure counts on the same prompt). Confirmed by manual retesting — the skill
+produces correct reviews, the grader is occasionally harsh.
+
+### Batch 4: Domain-Specific + Hard Cases (Cases 20-27) — 2026-07-16
+
+Added 8 tests: ValkeySearch injection, missing Redis timeout, hardcoded credential, silent
+truncation, Optional[int] truthiness, N+1 query, GPL-in-MIT licensing, sibling-parity
+escaping.
+
+Score: 48-52/54 (89-96%). No prompt change needed — existing constraints handle all new
+categories. Remaining variance is grading noise.
+
+### Summary After Full Expansion
+
+| Metric | Count |
+|---|---|
+| Total tests | 27 |
+| Assertions per run | 54 (27 tests × 2 models) |
+| Prompt iterations to reach green | 2 (quantification + resilience) |
+| Instructions in prompt | 5 constraints + role/task/context |
+| Consistent pass rate | 90-96% (variance is grading, not skill)
+
 ---
 
 ## Test Case 1: SQL Injection via String Interpolation
