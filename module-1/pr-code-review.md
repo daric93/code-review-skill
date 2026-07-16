@@ -75,6 +75,12 @@ just injection and race conditions.
   issues based on hypothetical contexts. Do not demand tests, documentation, or defensive
   hardening on code that is correct and self-evident — a trivial pure function does not need a
   docstring, and a test that already asserts observable behavior does not need more.
+- **Sufficiency over completeness (test code):** The checklist's test-quality checks exist to
+  catch tests that assert *nothing* or assert the *wrong* thing — not to require exhaustive
+  coverage. When the tests shown already assert observable behavior for the cases they target,
+  treat them as adequate. Do NOT flag them for missing edge cases, parametrization, or
+  additional scenarios unless a specific untested path is both visible in the code and
+  materially risky. "Could add more tests" is not a finding.
 - **Sibling sweep:** When you find a bug in one function, check whether sibling/adjacent
   functions have the same pattern. Report the pattern once, noting all affected locations.
 

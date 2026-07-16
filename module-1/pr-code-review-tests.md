@@ -503,3 +503,20 @@ Ran all 37 cases on Sonnet after wiring the skill to the shared checklist: **33/
 Hypothesis for the fix: the skill's scope-discipline constraint needs an explicit test-quality
 carve-out — "do not demand more tests when existing tests already assert observable behavior" —
 strong enough to override the checklist's recall pull.
+
+### Iteration — test-quality precision carve-out — 2026-07-16
+
+Change (one, per the one-change rule): added a "Sufficiency over completeness (test code)"
+constraint to `pr-code-review.md` — the checklist's test-quality checks catch tests that assert
+*nothing* or the *wrong* thing, not tests that could theoretically cover more; "could add more
+tests" is not a finding.
+
+Re-ran all 37 on Sonnet: **35/37 pass.**
+- Case 32 now passes — the reviewer stays silent on the two correct slugify tests.
+- Case 31 still passes — the carve-out did NOT suppress the real test-quality recall (a test
+  that asserts nothing is still flagged). Precision fix without a recall regression.
+- Remaining 2 failures (Case 4 HTTP error-handling, Case 7 async context manager) are the
+  documented pre-existing grader-variance cases — not regressions, not part of this expansion.
+
+Net: full-parity expansion complete. Recall extended to all checklist categories; precision
+held (false-positive-avoidance metric back to clean on the parity cases).
