@@ -232,6 +232,94 @@ tests:
         value: "The review does NOT invent a logic or operator-precedence bug in the formula (celsius * 9 / 5 + 32 is correct and uses float division). It states the code is correct. At most one clearly-optional micro-suggestion (e.g., a docstring) is acceptable."
         metric: false-positive-avoidance
 
+  # --- Test Case 10: Silent Fallback (resilience) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def get_cache_backend(config):
+            try:
+                from valkey_glide import GlideClient
+                return DistributedCache(GlideClient(config.valkey_url))
+            except ImportError:
+                return InMemoryCache()
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that the fallback to InMemoryCache is silent — in a multi-node deployment the cache is no longer shared across nodes, which is a correctness problem. Recommends logging a warning that communicates the consequence (cache not shared), not just the cause (import failed)."
+        metric: resilience
+      - type: llm-rubric
+        value: "Does NOT suggest removing the fallback entirely (fallbacks are valid). The issue is the silence, not the fallback pattern itself."
+        metric: false-positive-avoidance
+
+  # --- Test Case 11: Missing gRPC Deadline (resilience) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def fetch_profile(stub, user_id: str) -> Profile:
+            request = ProfileRequest(user_id=user_id)
+            return stub.GetProfile(request)
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that the gRPC call has no deadline/timeout. Without a deadline, the call can hang indefinitely if the server is slow or unresponsive, causing cascading hangs upstream. Recommends passing an explicit timeout (e.g., stub.GetProfile(request, timeout=N))."
+        metric: resilience
+
+  # --- Test Case 12: No Retry/Backoff (resilience) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def publish_event(client, event: dict) -> None:
+            client.publish("events", json.dumps(event))
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that a transient failure (network blip, broker unavailable) will cause the publish to fail with no retry or backoff. Recommends adding bounded retries with exponential backoff for transient errors."
+        metric: resilience
+      - type: llm-rubric
+        value: "Does NOT demand a full circuit-breaker or retry library for this small snippet — a reasonable retry/backoff suggestion is sufficient. Does NOT fabricate correctness bugs in the serialization or publish logic."
+        metric: false-positive-avoidance
+
+  # --- Test Case 13: Unbounded SCAN (resilience) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def collect_all_keys(client, pattern: str) -> list:
+            keys = []
+            cursor = 0
+            while True:
+                cursor, batch = client.scan(cursor, match=pattern)
+                keys.extend(batch)
+                if cursor == 0:
+                    break
+            return keys
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that this collects ALL matching keys into memory with no upper bound — on a large keyspace this can exhaust memory or block for a very long time. Recommends a max-iterations or max-items safety cap, streaming/yielding instead of accumulating, or early termination."
+        metric: resilience
+
+  # --- Test Case 14: Cleanup Skipped After Early Return (resilience) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def reset_index(client, index_name: str, key_prefix: str) -> None:
+            try:
+                client.ft(index_name).dropindex()
+            except IndexNotFoundError:
+                return  # index already gone — bail out
+            for key in client.scan_iter(match=f"{key_prefix}:*"):
+                client.delete(key)
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that when the index is already gone the function returns early and SKIPS the key cleanup, leaving orphaned keys. The key cleanup should run unconditionally (not gated by dropindex success) so recovery is idempotent."
+        metric: resilience
+
   # --- Test Case 5: Silent Failure (resilience) ---
   - vars:
       skill_prompt: file://pr-code-review.md
