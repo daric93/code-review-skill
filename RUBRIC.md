@@ -1,7 +1,7 @@
 # Evaluation Rubric — pr-code-review
 
 How the `pr-code-review` skill is scored, what "good" means per dimension, and the methodology
-for improving it. This is the grading contract the [eval](../../evals/pr-code-review/) enforces
+for improving it. This is the grading contract the [eval](evals/pr-code-review/) enforces
 and the standard a certifier can hold the skill to.
 
 ---
@@ -10,7 +10,7 @@ and the standard a certifier can hold the skill to.
 
 Every test grades the skill's review against **one** criterion on this scale. The grader prompt
 that enforces it lives in `defaultTest.rubricPrompt` of
-[`promptfooconfig.yaml`](../../evals/pr-code-review/promptfooconfig.yaml).
+[`promptfooconfig.yaml`](evals/pr-code-review/promptfooconfig.yaml).
 
 | Rating | Normalized | Meaning |
 |---|---|---|
@@ -50,10 +50,10 @@ first-class — the skill is not "good" if it wins one at the expense of the oth
 
 The rubric is applied to **two arms** on identical tests, model, and grader:
 
-- **Baseline (skill OFF):** [`promptfooconfig.baseline.yaml`](../../evals/pr-code-review/promptfooconfig.baseline.yaml)
-  via [`kiro-baseline.sh`](../../evals/kiro-baseline.sh) — bare model.
-- **Skill ON:** [`promptfooconfig.yaml`](../../evals/pr-code-review/promptfooconfig.yaml)
-  via [`kiro-review.sh`](../../evals/kiro-review.sh) — checklist + precision gates injected.
+- **Baseline (skill OFF):** [`promptfooconfig.baseline.yaml`](evals/pr-code-review/promptfooconfig.baseline.yaml)
+  via [`kiro-baseline.sh`](evals/kiro-baseline.sh) — bare model.
+- **Skill ON:** [`promptfooconfig.yaml`](evals/pr-code-review/promptfooconfig.yaml)
+  via [`kiro-review.sh`](evals/kiro-review.sh) — checklist + precision gates injected.
 
 The **delta in per-metric scores** between the two runs is the skill's measured value-add. The
 baseline is the honest control: if a dimension shows no lift over the bare model, the skill's
@@ -92,7 +92,7 @@ rules for that dimension aren't earning their place.
    (over-fitting guard); a one-off leaves its eval test failing until it recurs — except a P0
    security/correctness miss caught by a maintainer.
 3. **Edit** — the rule change is made in the **shared checklist**
-   ([`_shared/review-checklist.md`](../../skills/_shared/review-checklist.md)), not scattered
+   ([`_shared/review-checklist.md`](skills/_shared/review-checklist.md)), not scattered
    into the skill, so both the PR reviewer and the Valkey self-reviewer inherit it.
 4. **Verify** — re-run the eval. Previously-failing positive tests must now pass, and **no
    negative test may regress**. An unverified edit is an unproven edit.

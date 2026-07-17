@@ -5,14 +5,25 @@
 > proves it adds value), and the **closed feedback loop** that keeps it improving from real
 > reviewer activity.
 
-This package is the certification submission for the [`pr-code-review`](../../skills/pr-code-review/)
+This package is the certification submission for the [`pr-code-review`](skills/pr-code-review/)
 skill. It follows an **eval-driven development (EDD)** approach: the skill is treated like
 production code with a test suite, a measured baseline, and a repeatable improvement process.
 
-- **Skill under review:** [`skills/pr-code-review/SKILL.md`](../../skills/pr-code-review/SKILL.md)
-- **Eval framework:** [`evals/pr-code-review/`](../../evals/pr-code-review/)
+> **Provenance.** This repository *rebuilds an existing, in-use skill* by following the
+> AI Self-Directed Learning course end to end — writing tests before prompts, growing the
+> skill through measured iterations, and letting the git history record each step. The
+> `pr-code-review` skill (and the `_shared/` rulebook, `evals/`, and sibling skills it
+> composes with) already lives in my day-to-day toolkit; here it is re-derived from a minimal
+> starting point so the EDD discipline is demonstrable in the commit timeline. The supporting
+> `skills/`, `evals/`, `docs/`, `CONVENTIONS.md`, and `sync.sh` are copied in from that toolkit
+> so this repo is self-contained — they will appear as new files here, but they are existing
+> work, not built fresh for the course. The step-by-step rebuild lives under
+> [`module-1/`](module-1/) … [`module-4/`](module-4/).
+
+- **Skill under review:** [`skills/pr-code-review/SKILL.md`](skills/pr-code-review/SKILL.md)
+- **Eval framework:** [`evals/pr-code-review/`](evals/pr-code-review/)
 - **How I evaluate & improve (the rubric):** [`RUBRIC.md`](RUBRIC.md) and
-  [`docs/skill-evaluation-workflow.md`](../../docs/skill-evaluation-workflow.md)
+  [`docs/skill-evaluation-workflow.md`](docs/skill-evaluation-workflow.md)
 
 ---
 
@@ -32,7 +43,7 @@ silently as models change.
 
 A layered, reusable skill system plus a measurement harness:
 
-1. A **single rulebook** ([`_shared/review-checklist.md`](../../skills/_shared/review-checklist.md)) —
+1. A **single rulebook** ([`_shared/review-checklist.md`](skills/_shared/review-checklist.md)) —
    the language-agnostic "what to check" (design, correctness, resource management, resilience,
    security, performance, tests, licensing). It's the single source of truth, shared verbatim by
    the PR reviewer *and* the Valkey self-reviewer so their criteria never diverge.
@@ -52,22 +63,22 @@ The submission is not one prompt — it's a system of small, single-purpose, reu
 
 | Component | Path | Role in the system |
 |---|---|---|
-| **pr-code-review** | [`skills/pr-code-review/`](../../skills/pr-code-review/) | The skill under certification. Full PR review + re-review workflow. |
-| review-checklist (shared) | [`skills/_shared/review-checklist.md`](../../skills/_shared/review-checklist.md) | The rulebook — single source of truth for review rules. |
-| review-findings-schema (shared) | [`skills/_shared/review-findings-schema.md`](../../skills/_shared/review-findings-schema.md) | Canonical review lenses + finding output format. |
-| **security-review** | [`skills/security-review/`](../../skills/security-review/) | Focused fresh-eyes security pass; run by a `security-reviewer` sub-agent. |
-| **pr-code-review-gap-analyzer** | [`skills/pr-code-review-gap-analyzer/`](../../skills/pr-code-review-gap-analyzer/) | Sensor — compares my review vs other reviewers to find misses/false positives. |
-| **pr-code-review-retrospective** | [`skills/pr-code-review-retrospective/`](../../skills/pr-code-review-retrospective/) | Analyst/editor — consolidates gaps, edits the skill + checklist, re-runs the eval. |
-| **grade-the-grader** | [`skills/grade-the-grader/`](../../skills/grade-the-grader/) | Meta-eval — audits the eval's grading quality so scores stay meaningful. |
+| **pr-code-review** | [`skills/pr-code-review/`](skills/pr-code-review/) | The skill under certification. Full PR review + re-review workflow. |
+| review-checklist (shared) | [`skills/_shared/review-checklist.md`](skills/_shared/review-checklist.md) | The rulebook — single source of truth for review rules. |
+| review-findings-schema (shared) | [`skills/_shared/review-findings-schema.md`](skills/_shared/review-findings-schema.md) | Canonical review lenses + finding output format. |
+| **security-review** | [`skills/security-review/`](skills/security-review/) | Focused fresh-eyes security pass; run by a `security-reviewer` sub-agent. |
+| **pr-code-review-gap-analyzer** | [`skills/pr-code-review-gap-analyzer/`](skills/pr-code-review-gap-analyzer/) | Sensor — compares my review vs other reviewers to find misses/false positives. |
+| **pr-code-review-retrospective** | [`skills/pr-code-review-retrospective/`](skills/pr-code-review-retrospective/) | Analyst/editor — consolidates gaps, edits the skill + checklist, re-runs the eval. |
+| **grade-the-grader** | [`skills/grade-the-grader/`](skills/grade-the-grader/) | Meta-eval — audits the eval's grading quality so scores stay meaningful. |
 
 All are provider-neutral (`SKILL.md`) and install into Kiro or Claude Code via
-[`sync.sh`](../../sync.sh). See [`CONVENTIONS.md`](../../CONVENTIONS.md).
+[`sync.sh`](sync.sh). See [`CONVENTIONS.md`](CONVENTIONS.md).
 
 ---
 
 ## The evaluation framework
 
-Located in [`evals/pr-code-review/`](../../evals/pr-code-review/). Built on
+Located in [`evals/pr-code-review/`](evals/pr-code-review/). Built on
 [promptfoo](https://promptfoo.dev), running both the review generation and the LLM grading
 through `kiro-cli` (no separate API key — uses the Kiro subscription).
 
@@ -75,8 +86,8 @@ through `kiro-cli` (no separate API key — uses the Kiro subscription).
 
 | Arm | Config | Provider | What it measures |
 |---|---|---|---|
-| **Skill ON** | [`promptfooconfig.yaml`](../../evals/pr-code-review/promptfooconfig.yaml) | [`kiro-review.sh`](../../evals/kiro-review.sh) — injects the checklist + precision gates | The skill's actual behavior |
-| **Skill OFF (baseline)** | [`promptfooconfig.baseline.yaml`](../../evals/pr-code-review/promptfooconfig.baseline.yaml) | [`kiro-baseline.sh`](../../evals/kiro-baseline.sh) — bare model, same pin | The raw model on the same tests |
+| **Skill ON** | [`promptfooconfig.yaml`](evals/pr-code-review/promptfooconfig.yaml) | [`kiro-review.sh`](evals/kiro-review.sh) — injects the checklist + precision gates | The skill's actual behavior |
+| **Skill OFF (baseline)** | [`promptfooconfig.baseline.yaml`](evals/pr-code-review/promptfooconfig.baseline.yaml) | [`kiro-baseline.sh`](evals/kiro-baseline.sh) — bare model, same pin | The raw model on the same tests |
 
 Both arms use the **same model, same test snippets, same grader, same rubric, same threshold**.
 The only variable is whether the skill's rulebook and precision gates are present. The
@@ -117,7 +128,7 @@ promptfoo view                                               # compare per-metri
 promptfoo eval --filter-pattern "SQL injection"
 ```
 
-Full run/maintain guide: [`evals/README.md`](../../evals/README.md).
+Full run/maintain guide: [`evals/README.md`](evals/README.md).
 
 ---
 
@@ -144,7 +155,7 @@ EVERY ~3 PRs:                                              #pr-code-review-retro
 
 The recall/precision trend table in `review-gaps-retro.md` is the long-term signal of whether the
 skill is actually getting better. Rationale, comparison to peers, and anti-patterns:
-[`docs/skill-evaluation-workflow.md`](../../docs/skill-evaluation-workflow.md).
+[`docs/skill-evaluation-workflow.md`](docs/skill-evaluation-workflow.md).
 
 ---
 
