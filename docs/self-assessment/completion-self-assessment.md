@@ -3,6 +3,12 @@
 Evaluation against the four DLP Completion criteria. Each names one specific artifact, one
 real-work example, and an honest developing-edge.
 
+> **Path/count note (post-reorg):** written mid-course when work lived in `module-N/` folders
+> and the eval had 27 cases. The repo was later reorganized skill-centric and the eval grew to 40
+> graded cases. Current locations: command form → `evals/pr-code-review/pr-code-review.md`, eval →
+> `evals/pr-code-review/promptfooconfig.yaml`, canonical skill → `skills/pr-code-review/SKILL.md`.
+> The `module-N` names and the 27-case figure are preserved as the point-in-time record.
+
 ---
 
 ## Craft

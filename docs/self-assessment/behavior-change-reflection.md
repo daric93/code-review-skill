@@ -3,6 +3,10 @@
 Honest answers to: is each artifact in my actual workflow, when did I last use it outside a
 program exercise, and would I use it without this program?
 
+> **Path note (post-reorg):** written mid-course; `module-N/` file paths below now map to a
+> skill-centric layout (`skills/`, `evals/`, `docs/`). See [`../course-work.md`](../course-work.md)
+> for the mapping. The `module-N` names are kept as the point-in-time record.
+
 ## Per-Artifact
 
 ### pr-code-review skill

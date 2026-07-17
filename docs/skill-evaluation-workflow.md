@@ -74,8 +74,9 @@ AND shows a degraded score — this catches slow quality decay that binary pass/
 Because each test has a `metric:`, `promptfoo view` shows a per-dimension scorecard
 (`security: 0.83`, `resilience: 0.61`, …) — the Matthias-style multi-dimension view, automatic.
 
-**Provider & grader:** uses `kiro-cli` for both running the skill and `llm-rubric` grading,
-authenticated via my Kiro subscription — no separate OpenAI/Anthropic API key needed.
+**Provider & grader:** uses the Claude CLI via a small `claude.js` wrapper for both running the
+skill (providers: sonnet + haiku, the Model Ladder) and `llm-rubric` grading. The wrapper hardens
+grader-output JSON extraction (strips fences, extracts the first balanced object, retries once).
 
 ### 2. `grade-the-grader` skill (audits the eval itself)
 
@@ -208,7 +209,7 @@ Reviews accumulated gaps, edits the skill, re-runs the eval, syncs to git.
 |---|---|---|---|---|---|
 | Tooling | promptfoo | AI rubrics + grader agent | promptfoo | promptfoo (skill-creator generated) | promptfoo |
 | Test design | positive + negative, llm-rubric | 15-dim rubric, 1–5 scoring | per-skill configs | agent-generated JSON | positive + negative + resilience, **graded 1–5 rubric**, per-metric scorecard |
-| Grader | (improving/promptfoo default) | separate Kiro agent grades the grading | promptfoo | promptfoo | kiro-cli (my subscription) + **grade-the-grader audit skill** |
+| Grader | (improving/promptfoo default) | separate Kiro agent grades the grading | promptfoo | promptfoo | Claude CLI (via claude.js) + **grade-the-grader audit skill** |
 | Ground truth source | manual + regression from own outputs | per-PR manual review | — | — | **automated: real reviewer activity (both roles)** |
 | Feedback loop | "add errors to suite as regression" | "update agents with what they missed, manually" | "tests get stale, too costly" | tweak JSON manually | **structured sensor → log → analyst → eval** |
 | Cadence | after every change | per PR (one scoring run so far) | rarely (cost) | ad hoc | per-PR logging, skill edits every ~3 PRs |

@@ -85,7 +85,8 @@ that other providers ignore. Steering is Kiro-specific and is not installed for 
 
 ## Evals
 
-`evals/` holds promptfoo test suites that score skills via `kiro-cli`. See `evals/README.md`.
+`evals/` holds promptfoo test suites that score skills via the Claude CLI (through the
+`claude.js` wrapper). See `evals/README.md`.
 
 ## Project-specific vs general
 

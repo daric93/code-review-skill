@@ -114,11 +114,11 @@ Adapt review criteria to the detected language's idioms and best practices.
 For a large or high-risk change, and **where sub-agent delegation is supported**, you may run
 the review as parallel fresh-context reviewers instead of one linear pass — one sub-agent per
 lens, using the four canonical lenses defined in
-[`../_shared/review-findings-schema.md`](../_shared/review-findings-schema.md): **codebase
+[`../_shared/review-findings-schema.md`](../../skills/_shared/review-findings-schema.md): **codebase
 alignment & design fit** (primary), **correctness & security**, **requirements alignment**, and
 **testability**. The deep security half is delegated to the `security-reviewer` sub-agent (see
 below). Each lens still applies the relevant categories from
-[`../_shared/review-checklist.md`](../_shared/review-checklist.md). Each sub-agent returns
+[`../_shared/review-checklist.md`](../../skills/_shared/review-checklist.md). Each sub-agent returns
 findings with `file:line` and a quoted code `evidence` snippet. Merge their findings, then
 continue to Phase 3, where verification and the nitpick filter consolidate them.
 
@@ -134,7 +134,7 @@ this stays safe for general reviews and never makes this skill domain-specific.
 
 #### Review criteria — the shared rulebook
 Review each changed file against **every check in
-[`../_shared/review-checklist.md`](../_shared/review-checklist.md)** — the shared,
+[`../_shared/review-checklist.md`](../../skills/_shared/review-checklist.md)** — the shared,
 language-agnostic review rulebook covering the library-API pre-check, Design & Architecture,
 Correctness, Resource Management, Language-Specific Best Practices, API Consistency,
 Performance, Resilience & Operational Safety, Security, Test Quality & Coverage, Documentation,
@@ -168,7 +168,7 @@ added or sharpened, edit that shared file — not this skill.
 >   checklist yourself and note that the dedicated pass was skipped.
 
 Whether produced by the sub-agent or by you, the security baseline is the **Security** section
-of [`../_shared/review-checklist.md`](../_shared/review-checklist.md). Fold any security
+of [`../_shared/review-checklist.md`](../../skills/_shared/review-checklist.md). Fold any security
 findings into the numbered issue list in Phase 3 under the **Security** category.
 
 ### Phase 3: Build the Numbered Issue List
@@ -226,7 +226,7 @@ post anything. This is the artifact the user reviews/approves against, and the s
 - **Path:** `<config>/reviews/<YYYY-MM-DD>__<owner>__<repo>__pr<N>.md` (append `__run2`, `__run3`, …
   for same-day re-reviews of the same PR so the path stays unique).
 - **Format:** the persisted-findings-file schema in
-  [`../_shared/review-findings-schema.md`](../_shared/review-findings-schema.md) — a header block
+  [`../_shared/review-findings-schema.md`](../../skills/_shared/review-findings-schema.md) — a header block
   with `pr_url`, `repo`, `pr_number`, `review_date`, `head_sha`, `reviewer`, `verdict` (start as
   `pending`), and `tickets`; then every finding with its `file:line`, category, severity,
   evidence, suggested fix, the full inline-comment body, and a `decision` field set to `proposed`.
@@ -425,7 +425,7 @@ original severity in mind — an unresolved **bug/security** comment is a blocke
 
 **Re-scan newly-added code (do not just diff the flagged lines).** When a fix introduces *new*
 code — a new method, branch, helper, or file — treat that new code as a first-pass review target:
-apply the full [`../_shared/review-checklist.md`](../_shared/review-checklist.md) to it, not only a
+apply the full [`../_shared/review-checklist.md`](../../skills/_shared/review-checklist.md) to it, not only a
 check that the original comment's intent was met. A fix routinely lands fresh blockers *inside*
 the code that resolves an old comment. Verifying a fix was *added* without re-scanning what it
 added is the single most common re-review miss.
@@ -559,4 +559,4 @@ reviewers, logs misses/false-positives + adds eval tests) → `review-gaps-retro
 eval) → eval verifies. See [`governed-flow-test-results.md`](governed-flow-test-results.md).
 
 ---
-> Path placeholders: `<config>` = your assistant's user-level dir (`~/.kiro` for Kiro, `~/.claude` for Claude). See [`../_shared/paths.md`](../_shared/paths.md).
+> Path placeholders: `<config>` = your assistant's user-level dir (`~/.kiro` for Kiro, `~/.claude` for Claude). See [`../_shared/paths.md`](../../skills/_shared/paths.md).
