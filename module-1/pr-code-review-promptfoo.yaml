@@ -45,8 +45,50 @@ defaultTest:
   # (skill_prompt is left per-test so each case is self-documenting about what it feeds.)
   vars:
     checklist: file://../_shared/review-checklist.md
+  # Graded 1-5 scoring (not binary), matching RUBRIC.md and the live toolkit eval.
+  #   5 -> 1.00, 4 -> 0.75, 3 -> 0.50, 2 -> 0.25, 1 -> 0.00
+  # threshold 0.75 means a test passes only at >= 4/5 ("good"). A barely-adequate 3/5
+  # review fails the gate AND shows a degraded score — catching slow decay that binary
+  # pass/fail hides. Each test's `value:` becomes the {{rubric}} criterion below.
+  threshold: 0.75
   options:
     provider: "exec: node ./claude.js"
+    rubricPrompt: |
+      You are a strict evaluator of CODE REVIEW QUALITY. You are grading the output of an
+      automated code-review skill against a single review criterion.
+
+      [CRITERION THE REVIEW MUST SATISFY]
+      {{rubric}}
+
+      [THE REVIEW OUTPUT TO GRADE]
+      {{output}}
+
+      Score the review on this 1-5 scale, judging ONLY against the criterion above:
+
+      5 (Excellent): Fully satisfies the criterion. Identifies the issue precisely (or, for a
+        "does not flag" criterion, correctly stays silent), explains the impact, and gives a
+        correct, actionable fix. No fabricated or irrelevant issues.
+      4 (Good): Satisfies the criterion. Identifies the issue and gives a usable fix, but the
+        explanation or fix is slightly thin or imprecise. Minor noise is acceptable.
+      3 (Adequate): Partially satisfies the criterion. Mentions the issue vaguely or buries it,
+        OR identifies it but gives a weak/partial fix, OR adds some fabricated minor issues.
+      2 (Poor): Barely touches the criterion. Hints at the area but misses the actual issue, or
+        the recommendation is wrong, or it fabricates a significant non-issue.
+      1 (Fail): Does not satisfy the criterion at all. Misses the issue entirely, or (for a
+        "does not flag" criterion) fabricates the issue it should have ignored.
+
+      Be skeptical. Reserve 5 for genuinely strong reviews. A review that "sort of" mentions the
+      issue is a 3, not a 4. For negative tests (criteria beginning with "Does not" or about
+      staying silent on correct code), a review that invents the problem it should have ignored
+      is a 1.
+
+      Return ONLY a JSON object. Output the raw JSON object only — no markdown code
+      fences, no preamble, no trailing commentary, and no newlines inside string values:
+      {
+        "reason": "<1-3 sentences: what the review did well or poorly against the criterion, citing specifics>",
+        "score": <0.0-1.0, computed as (rating - 1) / 4 — i.e. 5->1.0, 4->0.75, 3->0.5, 2->0.25, 1->0.0>,
+        "pass": <true if score >= 0.75, else false>
+      }
 
 providers:
   - id: "exec: node ./claude.js"
@@ -798,3 +840,67 @@ tests:
       - type: llm-rubric
         value: "The review does NOT block or heavily flag this correct, self-evident one-line function for lacking a docstring. A docstring may be mentioned as a clearly-optional nit at most; treating missing documentation on trivially-obvious code as a required change is a scope/precision failure."
         metric: false-positive-avoidance
+
+  # ===========================================================================
+  # MERGED-IN CASES (38-40) — the 3 cases unique to the prior live eval that the
+  # 37 above did not already cover. Folded in when the two evals were unified so
+  # this suite is the single canonical eval. (The other live cases had cert
+  # equivalents already; only these three added new coverage.)
+  # ===========================================================================
+
+  # --- Test Case 38: Operator Not Handled In Delete Path (correctness / CRUD parity) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # select() and delete() are supposed to support the same operators.
+        def _apply(self, op, field, value, query):
+            if op == "EQUAL":
+                query.where(field == value)
+            elif op == "NOT_EQUAL":
+                query.search(field, negate=True)
+
+        def select(self, op, field, value):
+            q = Query()
+            self._apply(op, field, value, q)
+            return q.run()
+
+        def delete(self, op, field, value):
+            q = Query()
+            if op == "EQUAL":
+                q.where(field == value)
+            return q.delete()  # NOT_EQUAL silently does nothing
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies the core defect: delete() does not route through _apply and only handles EQUAL, so a NOT_EQUAL delete does not apply the intended filter — unlike select(), which handles NOT_EQUAL via _apply. Accept EITHER plausible consequence for the unfiltered NOT_EQUAL path: that it silently deletes nothing (no-op), OR that q.delete() on an unfiltered query deletes every row (a critical data-loss bug in common ORMs). Recommends handling the same operator set across all CRUD paths (or sharing _apply). PASS as long as the operator-parity root cause is identified and a sound fix is given; do NOT fail solely because the review picked one consequence over the other."
+        metric: correctness
+
+  # --- Test Case 39: Missing TLS + Auth For Cloud-Hosted Cache (resilience / cloud readiness) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # Connector intended for production use against managed Redis/Valkey (e.g. AWS ElastiCache).
+        def connect(host: str, port: int = 6379):
+            return redis.Redis(host=host, port=port)
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that this is not cloud/production ready: no TLS/SSL support (required by managed services like ElastiCache/MemoryDB/Azure Cache), no authentication (token/password), and no connection pooling or request timeout configuration. Recommends making TLS and auth configurable with sensible defaults. It is acceptable if it focuses on TLS and auth as the most critical gaps."
+        metric: resilience
+
+  # --- Test Case 40: Naive Escaping Of FT TEXT Phrase Query (security / escape context) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def search_phrase(client, user_text: str) -> list:
+            escaped = user_text.replace('"', '')   # strip quotes only
+            query = f'@body:"{escaped}"'
+            return client.ft("idx").search(query)
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that stripping only double quotes is insufficient escaping for a TEXT phrase query — other FT query metacharacters can still alter or break out of the query, and silently deleting user input also changes search semantics. Notes that TEXT phrase fields need their own proper escape function distinct from TAG escaping, validated against the engine's query syntax."
+        metric: security

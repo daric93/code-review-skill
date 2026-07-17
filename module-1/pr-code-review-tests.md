@@ -520,3 +520,33 @@ Re-ran all 37 on Sonnet: **35/37 pass.**
 
 Net: full-parity expansion complete. Recall extended to all checklist categories; precision
 held (false-positive-avoidance metric back to clean on the parity cases).
+
+### Eval unification — merge to single canonical suite + graded 1-5 — 2026-07-16
+
+Consolidated the two evals that existed for this one skill: this 37-case course-built suite and
+the prior 29-case live toolkit eval. This suite is now **canonical** (better coverage — it adds
+design-fit, API-consistency, test-quality, docs, dependencies — and it runs two providers for
+the Model Ladder, which the live single-provider eval lacked).
+
+Two changes:
+1. **Folded in the 3 cases unique to the live eval** (cases 38-40): operator-not-handled-in-delete
+   (CRUD operator parity), missing-TLS+auth-for-cloud-cache (cloud readiness), naive-escaping-of-
+   FT-TEXT-phrase (a distinct escape context from the TAG cases 20/27). The other live cases
+   already had equivalents here, so only these three added coverage. Suite is now **40 cases**.
+2. **Converted scoring from binary `llm-rubric` to graded 1-5** (threshold 0.75), matching what
+   RUBRIC.md and the README already documented. Ported the `rubricPrompt` + normalization from
+   the live eval. Each test's `value:` is unchanged — it becomes the `{{rubric}}` the 1-5 grader
+   scores against. A 3/5 "sort of" review now fails the gate and shows a degraded score instead
+   of passing silently.
+
+Graded result (Sonnet, 40 cases): **39/40.**
+- 37 cases score a clean 1.00.
+- Case 7 (correct async context manager) scores **0.625** — the documented borderline FP case;
+  graded scoring surfaces it as degraded rather than a silent pass. This is the method working.
+- Case 16 (React stale closure) hit a transient grader glitch ("could not extract JSON from
+  llm-rubric response") and scored 0 on that run; **re-run in isolation it scores 1.00** — a
+  grader-parse flake, not a skill failure.
+
+**Grader-calibration note (for grade-the-grader):** 37 of 40 at a perfect 1.00 is the "all-1.0"
+signal `grade-the-grader` flags — the graded scale may not be discriminating hard enough on the
+strong cases. Left as a documented meta-eval input, not fixed here.
