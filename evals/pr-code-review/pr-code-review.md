@@ -5,16 +5,17 @@ WHAT IT DOES: Reviews a code diff or snippet for correctness bugs, security
   test quality, documentation, and dependency issues. Reports each finding with
   location + impact + concrete fix, and stays silent (says "correct") on clean code.
 WHEN TO USE: When you have a diff or snippet you want a senior-engineer review pass on.
-  This is the Module 1 command form (snippet-in / findings-out). The full workflow skill
-  (PR fetching, inline-comment posting, approval gate, re-review) lives at module-3/SKILL.md.
+  This is the eval fixture — the snippet-in / findings-out command form the eval grades. The
+  full workflow skill (PR fetching, inline-comment posting, approval gate, re-review) is the
+  canonical skill at ../../skills/pr-code-review/SKILL.md.
 INPUT FORMAT: This prompt, followed by the shared REVIEW CHECKLIST, then "Review the
-  following code:" and a fenced code block. See the promptfoo config for how the harness
+  following code:" and a fenced code block. See promptfooconfig.yaml for how the harness
   injects the checklist + code vars.
-RULEBOOK: ../_shared/review-checklist.md — the language-agnostic list of WHAT to check.
-  This command supplies the reviewer ROLE + precision discipline; the checklist supplies
+RULEBOOK: ../../skills/_shared/review-checklist.md — the language-agnostic list of WHAT to
+  check. This command supplies the reviewer ROLE + precision discipline; the checklist supplies
   the categories. When a review RULE changes, edit the checklist, not this file.
-TEST FILE: module-1/pr-code-review-tests.md (37 cases + grading)
-EVAL CONFIG: module-1/pr-code-review-promptfoo.yaml (37 cases, two providers, checklist injected)
+TEST FILE: pr-code-review-tests.md (40 cases + grading, same directory)
+EVAL CONFIG: promptfooconfig.yaml (40 cases, two providers, graded 1-5, checklist injected)
 LOAD-BEARING AUDIT: documented in pr-code-review-tests.md (iteration 4 + audit section);
   4 instructions removed as non-load-bearing.
 -->
@@ -44,14 +45,14 @@ immediately. They need to know: what to fix, why it matters, and exactly how to 
 They do not need speculative threat modeling about contexts not shown in the diff, stylistic
 preferences, or suggestions to add features not relevant to the change.
 
-The **shared review checklist** (`../_shared/review-checklist.md`, injected below the prompt
+The **shared review checklist** (`../../skills/_shared/review-checklist.md`, injected below the prompt
 in evals) is the rulebook for *what* to check. It is the single source of truth, shared with
 other reviewers in the toolkit so criteria stay identical across them. This command adds the
 reviewer *role*, the *precision discipline*, and the *output shape* on top of that rulebook —
 it does not restate the rules. Apply every relevant check from the checklist, weighting by
 any user-specified focus areas.
 
-In the full skill (module-3/SKILL.md) the deep security pass is delegated to a dedicated
+In the canonical skill (../../skills/pr-code-review/SKILL.md) the deep security pass is delegated to a dedicated
 `security-reviewer` sub-agent and large changes fan out one sub-agent per review lens; here in
 the snippet form you apply the checklist inline yourself.
 

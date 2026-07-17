@@ -3,6 +3,13 @@
 Applied the "a new developer found these files cold" checklist to every committed artifact.
 Failures fixed before this doc was written.
 
+> **Path note (post-reorg):** this doc was written during the course when work lived in
+> `module-1/` … `module-4/` folders. The repo was later reorganized to a skill-centric layout.
+> Current locations: the command form is `evals/pr-code-review/pr-code-review.md`, the eval
+> config is `evals/pr-code-review/promptfooconfig.yaml`, the canonical skill is
+> `skills/pr-code-review/SKILL.md`, and the sentinel schema + hook are under `docs/governance/`.
+> The `module-N` names below are preserved as the course-stage labels they referred to.
+
 ## Command file — module-1/pr-code-review.md
 
 - [x] Comment header: what it does, when to use, input format, where the test file lives

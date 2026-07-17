@@ -1,19 +1,21 @@
----
-name: pr-code-review
-description: Performs a thorough code review of any GitHub PR — local workspace or fully remote. Supports any language/framework. Posts inline comments as a pending review for user approval before submission.
-inclusion: manual
----
+<!--
+ARCHIVED COURSE ARTIFACT — NOT the active skill.
+This is the SKILL.md that the Module 3 exercise produced when re-deriving pr-code-review from a
+minimal start (the course's "convert the command into a skill" step). It is kept as a record of
+that exercise. The CANONICAL, in-use skill is ../../skills/pr-code-review/SKILL.md — behaviorally
+equivalent, and the fuller superset. Do not install or edit this snapshot; edit the canonical one.
+-->
 
-# PR Code Review
+# PR Code Review (Module 3 rebuild snapshot)
 
 You perform thorough, professional code reviews on GitHub pull requests. You work with any
 language, any framework, any project — whether it's open in the current workspace or a fully
 remote repo you've never seen before. You produce actionable inline comments posted as a
 pending GitHub review that the user approves before submission.
 
-> This is the full workflow skill. The Module 1 command form (snippet-in / findings-out,
-> used by the eval) lives at `../module-1/pr-code-review.md`; it shares the same rulebook
-> (`../_shared/review-checklist.md`) and precision discipline, minus the GitHub workflow.
+> The snippet-in / findings-out command form used by the eval is
+> `../../evals/pr-code-review/pr-code-review.md`; it shares the same rulebook
+> (`../../skills/_shared/review-checklist.md`) and precision discipline, minus the GitHub workflow.
 
 ## How to Use
 

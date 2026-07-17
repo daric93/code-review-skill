@@ -58,7 +58,7 @@ change. Corrected to FAIL. Criteria were not modified after seeing bare-prompt o
 
 ## RTCC Prompt Grading Results (Sonnet, 2026-07-15)
 
-Prompt: `module-1/pr-code-review.md` (RTCC v1)
+Prompt: `pr-code-review.md` (RTCC v1, this directory)
 
 | Test Case | Bare Prompt | RTCC v1 | Change |
 |---|---|---|---|

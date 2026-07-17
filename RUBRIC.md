@@ -51,9 +51,9 @@ first-class — the skill is not "good" if it wins one at the expense of the oth
 The rubric is applied to **two arms** on identical tests, model, and grader:
 
 - **Baseline (skill OFF):** [`promptfooconfig.baseline.yaml`](evals/pr-code-review/promptfooconfig.baseline.yaml)
-  via [`kiro-baseline.sh`](evals/kiro-baseline.sh) — bare model.
+  — the bare model gets only the code (no skill, no checklist).
 - **Skill ON:** [`promptfooconfig.yaml`](evals/pr-code-review/promptfooconfig.yaml)
-  via [`kiro-review.sh`](evals/kiro-review.sh) — checklist + precision gates injected.
+  — the skill command + shared checklist are injected. Same `claude.js` provider and grader.
 
 The **delta in per-metric scores** between the two runs is the skill's measured value-add. The
 baseline is the honest control: if a dimension shows no lift over the bare model, the skill's

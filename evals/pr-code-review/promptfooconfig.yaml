@@ -1,49 +1,58 @@
-description: "pr-code-review skill eval"
-
-# Results are stored in ~/.promptfoo/output.db (use `promptfoo view` to browse)
-# outputPath writes a human-readable summary alongside the config
-outputPath: ./results.json
-
-providers:
-  # --- Bedrock (no Kiro monthly limit) ---
-  # - id: "bedrock:us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-  #   label: "bedrock-sonnet-4-5"
-  #   config:
-  #     region: "us-east-1"
-  #     systemPrompt: |
-  #       ...
-
-  # --- kiro-cli (uses Kiro monthly credits) ---
-  - id: "exec: ../kiro-review.sh"
-    label: "kiro-cli"
+# =============================================================================
+# pr-code-review evaluation harness
+#
+# DOMAIN: Automated code review. The prompt under test (pr-code-review.md) reviews
+#   a code diff/snippet and must (a) catch real correctness/security/resource/resilience
+#   bugs and (b) stay silent on correct code.
+#
+# CONSTRAINTS BEING TESTED:
+#   - Recall: real bugs (SQLi, race conditions, resource leaks, silent failures) are caught,
+#     located, and given a concrete fix.
+#   - Precision (false-positive-avoidance): correct code is NOT flagged; no speculative
+#     threat-modeling, no style nitpicks, no fabricated issues. This is the harder half.
+#   - Depth: race/data-loss findings quantify worst case; exception-handling findings assess
+#     catch scope.
+#
+# PROVIDERS: two, for the Model Ladder (sonnet + haiku) — see providers block below.
+# GRADER: claude.js also backs the llm-rubric assertions.
+# RUN: cd this dir && promptfoo eval --no-cache
+# =============================================================================
+description: "pr-code-review skill eval — canonical (40 cases, graded 1-5, Model Ladder)"
 
 prompts:
-  - "{{prompt}}"
+  # The skill body references ../../skills/_shared/review-checklist.md as its rulebook. We
+  # inject that checklist content into the prompt so the eval grades the skill AS DESIGNED —
+  # i.e. skill workflow + shared rulebook — rather than a skill that points at a file the model
+  # can't see. The baseline config omits both injections (bare model). Every test sets both vars.
+  - id: pr-code-review
+    raw: |
+      {{skill_prompt}}
 
-# defaultTest applies to all tests unless overridden
-# Uses kiro-cli for both the main provider calls and the llm-rubric grader.
-# Requires kiro-cli to be installed at ~/.local/bin/kiro-cli and authenticated.
+      ---
+
+      REVIEW CHECKLIST (the shared rulebook referenced above — apply every relevant check):
+
+      {{checklist}}
+
+      ---
+
+      Review the following code:
+
+      {{code}}
+
 defaultTest:
-  # Pass threshold on the normalized 0-1 score. A 1-5 graded rubric (below) maps:
+  # checklist is the same for every test — set once here instead of in all 37 cases.
+  # (skill_prompt is left per-test so each case is self-documenting about what it feeds.)
+  vars:
+    checklist: file://../../skills/_shared/review-checklist.md
+  # Graded 1-5 scoring (not binary), matching RUBRIC.md and the live toolkit eval.
   #   5 -> 1.00, 4 -> 0.75, 3 -> 0.50, 2 -> 0.25, 1 -> 0.00
-  # threshold 0.75 means a test only passes if the review scores >= 4/5 ("good").
-  # This is Matthias-style graded scoring: a barely-adequate review (3/5) no longer
-  # passes silently — it shows up as a degraded score and fails the gate.
+  # threshold 0.75 means a test passes only at >= 4/5 ("good"). A barely-adequate 3/5
+  # review fails the gate AND shows a degraded score — catching slow decay that binary
+  # pass/fail hides. Each test's `value:` becomes the {{rubric}} criterion below.
   threshold: 0.75
   options:
-    provider:
-      # --- Bedrock grader (no Kiro monthly limit) ---
-      # id: "bedrock:us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-      # label: "bedrock-grader"
-      # config:
-      #   region: "us-east-1"
-      # --- kiro-cli grader (uses Kiro monthly credits) ---
-      id: "exec: ../kiro-grade.sh"
-      label: "kiro-cli-grader"
-
-    # Graded rubric template (Matthias's 1-5 scale, applied to EVERY test).
-    # {{output}} = the skill's review. {{rubric}} = each test's `value:` criterion.
-    # The grader scores 1-5 against the criterion, then we normalize to 0-1.
+    provider: "exec: node ./claude.js"
     rubricPrompt: |
       You are a strict evaluator of CODE REVIEW QUALITY. You are grading the output of an
       automated code-review skill against a single review criterion.
@@ -69,8 +78,9 @@ defaultTest:
         "does not flag" criterion) fabricates the issue it should have ignored.
 
       Be skeptical. Reserve 5 for genuinely strong reviews. A review that "sort of" mentions the
-      issue is a 3, not a 4. For negative tests (criteria beginning with "Does not"), a review
-      that invents the problem it should have ignored is a 1.
+      issue is a 3, not a 4. For negative tests (criteria beginning with "Does not" or about
+      staying silent on correct code), a review that invents the problem it should have ignored
+      is a 1.
 
       Return ONLY a JSON object. Output the raw JSON object only — no markdown code
       fences, no preamble, no trailing commentary, and no newlines inside string values:
@@ -80,210 +90,165 @@ defaultTest:
         "pass": <true if score >= 0.75, else false>
       }
 
+providers:
+  - id: "exec: node ./claude.js"
+    label: "sonnet"
+    config:
+      model: sonnet
+  - id: "exec: node ./claude.js"
+    label: "haiku"
+    config:
+      model: haiku
+
 tests:
-  # ─── POSITIVE: Catches real bugs ────────────────────────────────────────────
-
-  # SQL injection
-  - description: "SQL injection via f-string"
-    vars:
-      prompt: |
-        Review this Python code:
+  # --- Test Case 1: SQL Injection (security recall) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
         ```python
-        def get_user(user_id):
-            query = f"SELECT * FROM users WHERE id = {user_id}"
-            return db.execute(query)
+        # app/db/queries.py
+        def search_users(name_filter: str) -> list[dict]:
+            query = f"SELECT id, email FROM users WHERE name LIKE '%{name_filter}%'"
+            return db.execute(query).fetchall()
         ```
     assert:
       - type: llm-rubric
-        value: "Identifies SQL injection risk and recommends parameterized queries."
+        value: "The review identifies SQL injection: name_filter is interpolated directly into the SQL query string without parameterization. The review names the attack class (SQL injection) and explains the impact (arbitrary data access, modification, or deletion)."
         metric: security
-
-  # Missing HTTP error handling
-  - description: "missing HTTP error handling"
-    vars:
-      prompt: |
-        Review this JavaScript code:
-        ```javascript
-        async function fetchUserData(userId) {
-          const response = await fetch(`/api/users/${userId}`);
-          const data = await response.json();
-          return data;
-        }
-        ```
-    assert:
       - type: llm-rubric
-        value: "Identifies that failed HTTP responses and network errors are not handled."
-        metric: correctness
-
-  # Race condition
-  - description: "race condition on read-modify-write"
-    vars:
-      prompt: |
-        Review this code used in a multi-threaded web server:
-        ```python
-        class Counter:
-            def __init__(self):
-                self.count = 0
-
-            def increment(self):
-                current = self.count
-                self.count = current + 1
-        ```
-    assert:
+        value: "The review provides a concrete parameterized-query fix that shows how the LIKE wildcards move into the parameter value (e.g., passing f'%{name_filter}%' as the parameter). Not just 'use parameterized queries' without showing the pattern."
+        metric: security-fix
       - type: llm-rubric
-        value: "Identifies the race condition when increment is called concurrently."
-        metric: correctness
-
-  # Stale closure + missing key prop (React)
-  - description: "React stale closure and missing key prop"
-    vars:
-      prompt: |
-        Review this React component:
-        ```tsx
-        function UserList({ users }) {
-          const [filtered, setFiltered] = useState(users);
-          useEffect(() => {
-            setFiltered(users.filter(u => u.active));
-          }, []);
-          return <ul>{filtered.map(user => <li>{user.name}</li>)}</ul>;
-        }
-        ```
-    assert:
-      - type: llm-rubric
-        value: "Identifies the stale closure (missing users in useEffect dependency array) and the missing key prop on list items."
-        metric: correctness
-
-  # Sync-over-async (unique to your skill's requirements)
-  - description: "sync-over-async run_until_complete"
-    vars:
-      prompt: |
-        Review this Python code that wraps async logic for sync callers:
-        ```python
-        class SyncClient:
-            def fetch(self, url: str) -> dict:
-                loop = asyncio.get_event_loop()
-                return loop.run_until_complete(self._async_fetch(url))
-
-            async def _async_fetch(self, url: str) -> dict:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url) as resp:
-                        return await resp.json()
-        ```
-    assert:
-      - type: llm-rubric
-        value: "Identifies that run_until_complete (or get_event_loop) fails with RuntimeError when called from within an already-running event loop. Recommends at least one valid remediation, such as: guarding with asyncio.get_running_loop(), using asyncio.run_coroutine_threadsafe, running the coroutine on a dedicated thread with its own event loop, or using asyncio.run() with an acknowledgement of its running-loop caveat. Do not require any single specific API — any technically correct approach to safely bridging sync and async should pass."
-        metric: correctness
-
-  # Silent partial failure in bulk writes (unique to your skill)
-  - description: "silent partial failure in bulk insert"
-    vars:
-      prompt: |
-        Review this Python code that inserts documents in bulk:
-        ```python
-        def insert_documents(docs: list[dict]) -> None:
-            for doc in docs:
-                try:
-                    db.insert(doc)
-                except Exception as e:
-                    logger.error(f"Failed to insert {doc['id']}: {e}")
-        ```
-    assert:
-      - type: llm-rubric
-        value: "Identifies that failures are silently swallowed — the caller has no way to know which documents were not inserted. Recommends collecting failures and raising after the loop."
-        metric: correctness
-
-  # Resource leak on error path
-  - description: "resource leak — close() misses _pool"
-    vars:
-      prompt: |
-        Review this Python class:
-        ```python
-        class DBClient:
-            def __init__(self, url: str):
-                self._conn = create_connection(url)
-                self._pool = create_pool(url)
-
-            def close(self):
-                self._conn.close()
-        ```
-    assert:
-      - type: llm-rubric
-        value: "Identifies that close() only cleans up _conn and leaks _pool. Every resource initialized in __init__ must have a cleanup path."
-        metric: resource-management
-
-  # ValkeySearch query injection (domain-specific)
-  - description: "ValkeySearch tag query injection"
-    vars:
-      prompt: |
-        Review this Python function that constructs a ValkeySearch query:
-        ```python
-        def search_by_tag(tag_value: str) -> list:
-            query = f"@category:{{{tag_value}}}"
-            return client.ft("idx").search(query)
-        ```
-    assert:
-      - type: llm-rubric
-        value: "Identifies that tag_value is interpolated directly into the query without escaping, allowing query injection. Recommends escaping special characters including pipe, tilde, and other FT.SEARCH metacharacters."
-        metric: security
-
-  # Missing timeout on external client
-  - description: "missing timeout on Redis/Valkey client"
-    vars:
-      prompt: |
-        Review this Python code that creates a Redis/Valkey client:
-        ```python
-        def create_client(host: str, port: int) -> redis.Redis:
-            return redis.Redis(host=host, port=port)
-        ```
-    assert:
-      - type: llm-rubric
-        value: "Identifies that no timeout is configured on the connection. Missing timeouts can cause cascading hangs in production. Recommends setting socket_timeout and socket_connect_timeout."
-        metric: resilience
-
-  # ─── NEGATIVE: Does NOT fabricate issues in correct code ────────────────────
-
-  # Correct Rust error handling
-  - description: "negative — correct Rust error handling"
-    vars:
-      prompt: |
-        Review this Rust function:
-        ```rust
-        fn parse_config(path: &str) -> Result<Config, ConfigError> {
-            let content = std::fs::read_to_string(path)
-                .map_err(|e| ConfigError::Io(e))?;
-            let config: Config = serde_json::from_str(&content)
-                .map_err(|e| ConfigError::Parse(e))?;
-            if config.max_connections == 0 {
-                return Err(ConfigError::Validation("max_connections must be > 0".into()));
-            }
-            Ok(config)
-        }
-        ```
-    assert:
-      - type: llm-rubric
-        value: "Does not invent critical bugs. Acknowledges the code handles errors well. Any suggestions are minor improvements, not fabricated vulnerabilities."
+        value: "The review does NOT suggest input validation alone as a sufficient fix, and does NOT hallucinate additional vulnerabilities (such as authentication issues or missing error handling) that do not exist in this 3-line snippet."
         metric: false-positive-avoidance
 
-  # Correct Optional[int] truthiness check — does NOT flag valid code as buggy
-  - description: "negative — correct Optional[int] is-not-None check"
-    vars:
-      prompt: |
-        Review this Python function that accepts an optional integer:
+  # --- Test Case 2: Correct Rust Code (false positive avoidance) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```rust
+        // src/config.rs
+        use std::fs;
+        use std::path::Path;
+
+        pub fn load_config(path: &Path) -> Result<Config, ConfigError> {
+            let content = fs::read_to_string(path)
+                .map_err(|e| ConfigError::Io { path: path.to_owned(), source: e })?;
+
+            let parsed: toml::Value = content
+                .parse()
+                .map_err(|e| ConfigError::Parse { path: path.to_owned(), source: e })?;
+
+            Config::from_toml(parsed)
+                .map_err(|e| ConfigError::Validation { path: path.to_owned(), source: e })
+        }
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review states that the code is correct, well-structured, or has no significant issues. It does NOT present speculative issues (like 'unbounded file read' or 'symlink traversal' or 'DoS') as findings — those are hypothetical threat models about contexts not shown in the diff."
+        metric: false-positive-avoidance
+      - type: llm-rubric
+        value: "The review does NOT suggest replacing the custom error type with anyhow or Box<dyn Error>, does NOT claim there is a 'missing error case' or 'unhandled error', and does NOT flag the code for missing tests."
+        metric: false-positive-avoidance
+
+  # --- Test Case 3: Race Condition (correctness) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
         ```python
-        def set_limit(limit: Optional[int] = None) -> None:
+        # services/counter.py
+        class ViewCounter:
+            def __init__(self, redis_client):
+                self.redis = redis_client
+
+            async def increment(self, page_id: str) -> int:
+                current = await self.redis.get(f"views:{page_id}")
+                new_count = int(current or 0) + 1
+                await self.redis.set(f"views:{page_id}", new_count)
+                return new_count
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review identifies the race condition: between get and set, concurrent requests can read the same value and lose increments. It explains the impact in concrete terms (lost counts under concurrency)."
+        metric: correctness
+      - type: llm-rubric
+        value: "The review recommends Redis INCR (or INCRBY) as the atomic fix — not a Python-level asyncio.Lock (which doesn't protect across multiple processes in a distributed system)."
+        metric: correctness-fix
+      - type: llm-rubric
+        value: "The review does NOT fabricate an issue with 'int(current or 0)' for the None case — this is correct handling of a missing Redis key."
+        metric: false-positive-avoidance
+      - type: llm-rubric
+        value: "The review quantifies the race condition impact: at N concurrent requests hitting the same page_id simultaneously, up to N-1 increments can be lost in a single burst. The explanation must include a concrete numeric bound or worst-case formula, not just 'counts can be lost'."
+        metric: correctness-depth
+
+  # --- Test Case 4: Resource Leak (resource management) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # app/service.py
+        class DataService:
+            def __init__(self, db_url: str):
+                self.pool = asyncpg.create_pool(db_url, min_size=5, max_size=20)
+
+            async def start(self):
+                self.pool = await self.pool
+
+            async def query(self, sql: str, *args):
+                async with self.pool.acquire() as conn:
+                    return await conn.fetch(sql, *args)
+
+            async def stop(self):
+                await self.pool.close()
+        ```
+
+        Now the caller:
+
+        ```python
+        # app/main.py
+        async def run():
+            service = DataService("postgresql://localhost/mydb")
+            await service.start()
+            try:
+                result = await service.query("SELECT 1")
+            finally:
+                pass  # TODO: cleanup
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review identifies the resource leak: service.stop() is never called because the finally block is a no-op (pass). The connection pool's 5-20 connections remain open, potentially exhausting the database's connection limit."
+        metric: resource-management
+      - type: llm-rubric
+        value: "The review provides a concrete fix: either call 'await service.stop()' in the finally block, or restructure to use an async context manager (__aenter__/__aexit__)."
+        metric: resource-management-fix
+      - type: llm-rubric
+        value: "The review does NOT claim that 'async with self.pool.acquire()' is the leak (that correctly returns the connection to the pool), and does NOT suggest the pool itself is unnecessary."
+        metric: false-positive-avoidance
+      - type: llm-rubric
+        value: "The review mentions the specific connection count from the code (min_size=5, max_size=20) when explaining the leak impact — e.g., '5 to 20 connections remain open' or 'up to 20 connections leaked'. It does not just say 'connections are leaked' without referencing the pool size parameters."
+        metric: resource-management-depth
+
+  # --- Test Case 6: Correct Optional[int] Check (false positive avoidance) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def set_limit(self, limit: Optional[int] = None) -> None:
             if limit is not None:
                 self._limit = limit
         ```
     assert:
       - type: llm-rubric
-        value: "Does not flag this as an issue. The use of 'is not None' is correct for Optional[int] where 0 is a valid value. A review that flags this as wrong would be a false positive."
+        value: "The review does NOT flag this code as buggy. The use of 'is not None' is correct for Optional[int] where 0 is a valid value. A review that claims this check is wrong, or suggests 'if limit:' instead, is a false positive."
+        metric: false-positive-avoidance
+      - type: llm-rubric
+        value: "The review states the code is correct, or that no issues were found. Any suggestions offered are clearly marked as optional/minor, not presented as bugs."
         metric: false-positive-avoidance
 
-  # Correct async context manager usage
-  - description: "negative — correct async context manager usage"
-    vars:
-      prompt: |
-        Review this Python async code:
+  # --- Test Case 7: Correct Async Context Manager (false positive avoidance) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
         ```python
         async def fetch_data(url: str) -> dict:
             async with aiohttp.ClientSession() as session:
@@ -293,224 +258,16 @@ tests:
         ```
     assert:
       - type: llm-rubric
-        value: "Does not fabricate resource leak issues. The code correctly uses async context managers for both session and response. raise_for_status() correctly handles HTTP errors. Any suggestions are minor improvements only."
+        value: "The review does NOT fabricate resource leak issues. The code correctly uses async context managers for both session and response, and raise_for_status() correctly surfaces HTTP errors. A review claiming a leak or missing error handling here is a false positive."
+        metric: false-positive-avoidance
+      - type: llm-rubric
+        value: "The review acknowledges the code is correct. Creating a ClientSession per call MAY be noted as a performance consideration, but only if clearly framed as an optional optimization — not as a bug or resource leak."
         metric: false-positive-avoidance
 
-  # ─── RESILIENCE: Operational safety patterns ────────────────────────────────
-
-  # Silent fallback with no operator-visible logging
-  - description: "silent fallback to local storage in distributed deployment"
-    vars:
-      prompt: |
-        Review this Python code used in a multi-node service:
-        ```python
-        def get_cache_backend(config):
-            try:
-                from valkey_glide import GlideClient
-                return DistributedCache(GlideClient(config.valkey_url))
-            except ImportError:
-                return InMemoryCache()
-        ```
-    assert:
-      - type: llm-rubric
-        value: "Identifies that the fallback to InMemoryCache is silent — in a multi-node deployment the cache will no longer be shared across nodes, which is a correctness problem operators cannot see. Recommends logging a clear warning that communicates the consequence (cache not shared across nodes), not just the cause. Bonus if it suggests making the fallback opt-in or surfacing it via a health/readiness check."
-        metric: resilience
-
-  # Missing deadline/timeout on a gRPC call
-  - description: "missing deadline on gRPC call"
-    vars:
-      prompt: |
-        Review this Python code that calls a gRPC service:
-        ```python
-        def fetch_profile(stub, user_id: str) -> Profile:
-            request = ProfileRequest(user_id=user_id)
-            return stub.GetProfile(request)
-        ```
-    assert:
-      - type: llm-rubric
-        value: "Identifies that the gRPC call has no deadline/timeout. Without a deadline the call can hang indefinitely if the server is slow or unresponsive, causing cascading hangs upstream. Recommends passing an explicit timeout (e.g. stub.GetProfile(request, timeout=N))."
-        metric: resilience
-
-  # No retry/backoff on a transient external operation
-  - description: "no retry or backoff on transient external call"
-    vars:
-      prompt: |
-        Review this Python code that publishes to an external queue:
-        ```python
-        def publish_event(client, event: dict) -> None:
-            client.publish("events", json.dumps(event))
-        ```
-    assert:
-      - type: llm-rubric
-        value: "Identifies that a transient failure (network blip, broker unavailable) will cause the publish to fail outright with no retry or backoff. Recommends adding bounded retries with exponential backoff for transient errors, while being careful not to retry non-retryable errors. Should NOT demand a full circuit-breaker for this small snippet — a reasonable retry/backoff suggestion is sufficient."
-        metric: resilience
-
-  # ─── COVERAGE: skill rules that previously had no test ──────────────────────
-
-  # Silent truncation limit
-  - description: "silent truncation via hardcoded LIMIT"
-    vars:
-      prompt: |
-        Review this Python function:
-        ```python
-        def get_recent_orders(db, customer_id: str) -> list:
-            return db.execute(
-                "SELECT * FROM orders WHERE customer_id = ? LIMIT 0, 10000",
-                (customer_id,),
-            )
-        ```
-    assert:
-      - type: llm-rubric
-        value: "Identifies that the hardcoded 10000 limit silently truncates results — a customer with more than 10000 orders loses data with no error or warning to the caller. Recommends at minimum extracting it to a named constant, and ideally logging a warning when the limit is hit or making it configurable / paginated."
-        metric: correctness
-
-  # Operator completeness across CRUD methods
-  - description: "operator not handled in delete path"
-    vars:
-      prompt: |
-        Review this Python filter handling. select() and delete() are supposed to support the same operators:
-        ```python
-        def _apply(self, op, field, value, query):
-            if op == "EQUAL":
-                query.where(field == value)
-            elif op == "NOT_EQUAL":
-                query.search(field, negate=True)  # falls through to full search
-
-        def select(self, op, field, value):
-            q = Query()
-            self._apply(op, field, value, q)
-            return q.run()
-
-        def delete(self, op, field, value):
-            q = Query()
-            if op == "EQUAL":
-                q.where(field == value)
-            return q.delete()  # NOT_EQUAL silently does nothing
-        ```
-    assert:
-      - type: llm-rubric
-        value: "Identifies the core defect: delete() does not route through _apply and only handles EQUAL, so a NOT_EQUAL delete does not apply the intended filter — unlike select(), which handles NOT_EQUAL via _apply. Accept EITHER plausible consequence for the unfiltered NOT_EQUAL path: that it silently deletes nothing (no-op), OR that q.delete() on an unfiltered query deletes every row (a critical data-loss bug, which is the correct behavior in common ORMs like SQLAlchemy/Django and a legitimately more severe reading than the code's inline comment claims). Recommends handling the same operator set across all CRUD paths (or sharing the _apply logic). PASS as long as the operator-parity root cause is identified and a sound fix is given; do NOT fail solely because the review picked the 'deletes everything' consequence over 'deletes nothing'."
-        metric: correctness
-
-  # Unbounded iteration over external data
-  - description: "unbounded SCAN with no safety limit"
-    vars:
-      prompt: |
-        Review this Python code that scans a Redis/Valkey keyspace:
-        ```python
-        def collect_all_keys(client, pattern: str) -> list:
-            keys = []
-            cursor = 0
-            while True:
-                cursor, batch = client.scan(cursor, match=pattern)
-                keys.extend(batch)
-                if cursor == 0:
-                    break
-            return keys
-        ```
-    assert:
-      - type: llm-rubric
-        value: "Identifies that this collects ALL matching keys into memory with no upper bound — on a keyspace with millions of keys this can exhaust memory or run for a very long time. Recommends a max-iterations or max-items safety cap, streaming/yielding instead of accumulating, or early termination once enough items are gathered."
-        metric: resilience
-
-  # Partial failure cleanup / idempotent recovery
-  - description: "cleanup skipped after early return on partial failure"
-    vars:
-      prompt: |
-        Review this Python index-reset logic:
-        ```python
-        def reset_index(client, index_name: str, key_prefix: str) -> None:
-            try:
-                client.ft(index_name).dropindex()
-            except IndexNotFoundError:
-                return  # index already gone — bail out
-            for key in client.scan_iter(match=f"{key_prefix}:*"):
-                client.delete(key)
-        ```
-    assert:
-      - type: llm-rubric
-        value: "Identifies that when the index is already gone the function returns early and SKIPS the key cleanup, leaving orphaned keys forever. Recommends running the key cleanup unconditionally (not gated by the dropindex success) so recovery is idempotent."
-        metric: resilience
-
-  # Cloud readiness — missing TLS/auth for managed Valkey/Redis
-  - description: "missing TLS and auth for cloud-hosted cache"
-    vars:
-      prompt: |
-        Review this Python connector intended for production use against managed Redis/Valkey (e.g. AWS ElastiCache):
-        ```python
-        def connect(host: str, port: int = 6379):
-            return redis.Redis(host=host, port=port)
-        ```
-    assert:
-      - type: llm-rubric
-        value: "Identifies that this is not cloud/production ready: no TLS/SSL support (required by managed services like ElastiCache/MemoryDB/Azure Cache), no authentication (token/password), and no connection pooling or request timeout configuration. Recommends making TLS and auth configurable with sensible defaults. (It is acceptable if it focuses on TLS and auth as the most critical gaps.)"
-        metric: resilience
-
-  # Multiple escape contexts — TEXT phrase query, not just TAG
-  - description: "naive escaping of FT TEXT phrase query"
-    vars:
-      prompt: |
-        Review this Python code that builds a ValkeySearch/RediSearch TEXT phrase query:
-        ```python
-        def search_phrase(client, user_text: str) -> list:
-            escaped = user_text.replace('"', '')   # strip quotes only
-            query = f'@body:"{escaped}"'
-            return client.ft("idx").search(query)
-        ```
-    assert:
-      - type: llm-rubric
-        value: "Identifies that stripping only double quotes is insufficient escaping for a TEXT phrase query — other FT query metacharacters can still alter or break out of the query, and silently deleting user input also changes search semantics. Notes that TEXT phrase fields need their own proper escape function distinct from TAG escaping, validated against the engine's query syntax."
-        metric: security
-
-  # Async cleanup — unawaited close() promise
-  - description: "unawaited async close() in dispose"
-    vars:
-      prompt: |
-        Review this TypeScript code:
-        ```typescript
-        class CacheClient {
-          private client: GlideClient;
-          constructor(client: GlideClient) {
-            this.client = client;
-          }
-          async dispose(): Promise<void> {
-            this.client.close();  // close() returns a Promise
-          }
-        }
-        ```
-    assert:
-      - type: llm-rubric
-        value: "Identifies that client.close() returns a Promise that is not awaited, so dispose() resolves before the connection is actually closed — risking a half-open connection or the process exiting before cleanup completes. Recommends `await this.client.close();`."
-        metric: resource-management
-  # ─── COVERAGE GAP FILL: checklist rules with no prior snippet test ──────────
-
-  # Secret handling — hardcoded credential (Security checklist, previously untested)
-  - description: "hardcoded credential in source"
-    vars:
-      prompt: |
-        Review this Python module:
-        ```python
-        import requests
-
-        API_KEY = "key_9f8e7d6c5b4a3210fedcba9876543210"
-
-        def charge(amount: int):
-            return requests.post(
-                "https://api.payments.example/v1/charges",
-                headers={"Authorization": f"Bearer {API_KEY}"},
-                json={"amount": amount},
-            )
-        ```
-    assert:
-      - type: llm-rubric
-        value: "Identifies that a live secret/API key is hardcoded in source, which is a security risk (leaks via VCS history, logs, and shared code). Recommends loading it from an environment variable or a secrets manager, and rotating the exposed key. Bonus if it notes the key should never have been committed."
-        metric: security
-
-  # Secret handling — negative: correct env-var usage is NOT a finding
-  - description: "negative — secret correctly loaded from env"
-    vars:
-      prompt: |
-        Review this Python module:
+  # --- Test Case 8: Secret Correctly Loaded From Env (false positive avoidance) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
         ```python
         import os
         import requests
@@ -528,14 +285,282 @@ tests:
         ```
     assert:
       - type: llm-rubric
-        value: "This test is about NOT fabricating a secret-handling vulnerability. The key is correctly sourced from an environment variable (with a clear error when unset) and a request timeout is set. PASS if the review does NOT claim the secret is hardcoded/embedded in source, does NOT treat secret handling as a real security issue, and does NOT demand the key be moved out of the code. Minor, clearly-secondary suggestions (logging, retries, type hints) are acceptable and must not cause a fail. FAIL only if the review invents a hardcoded-secret or insecure-credential-storage problem that is not present."
+        value: "The review does NOT claim the secret is hardcoded or insecurely stored. The key is correctly sourced from an environment variable with a clear error when unset, and a request timeout is set. A review inventing a credential-storage problem is a false positive."
+        metric: false-positive-avoidance
+      - type: llm-rubric
+        value: "The review does NOT present minor suggestions (logging, retries, type hints) as security issues or required changes. The code's security posture is acknowledged as sound."
         metric: false-positive-avoidance
 
-  # Optional-numeric truthiness — POSITIVE direction (only the negative existed before)
-  - description: "Optional[int] truthiness drops valid zero"
-    vars:
-      prompt: |
-        Review this Python function. limit is an optional integer where 0 is a meaningful value (no results):
+  # --- Test Case 9: Correct Pure Function (false positive avoidance / scope discipline) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def celsius_to_fahrenheit(celsius: float) -> float:
+            return celsius * 9 / 5 + 32
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review does NOT demand runtime type/None validation, exception handling, logging, or input-range checks for this pure arithmetic function with a typed float parameter. Demanding defensive hardening on a pure helper is out-of-scope noise."
+        metric: false-positive-avoidance
+      - type: llm-rubric
+        value: "The review does NOT invent a logic or operator-precedence bug in the formula (celsius * 9 / 5 + 32 is correct and uses float division). It states the code is correct. At most one clearly-optional micro-suggestion (e.g., a docstring) is acceptable."
+        metric: false-positive-avoidance
+
+  # --- Test Case 10: Silent Fallback (resilience) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def get_cache_backend(config):
+            try:
+                from valkey_glide import GlideClient
+                return DistributedCache(GlideClient(config.valkey_url))
+            except ImportError:
+                return InMemoryCache()
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that the fallback to InMemoryCache is problematic — either because it is silent (operators cannot see the degradation), or because the try/except scope is too broad (catches ImportError from constructor failures, not just missing package). Recommends any valid fix: logging a warning, narrowing the try/except to only the import statement, making the fallback opt-in, or surfacing the state via health checks."
+        metric: resilience
+      - type: llm-rubric
+        value: "Does NOT suggest removing the fallback entirely (fallbacks are valid). The issue is the silence, not the fallback pattern itself."
+        metric: false-positive-avoidance
+
+  # --- Test Case 11: Missing gRPC Deadline (resilience) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def fetch_profile(stub, user_id: str) -> Profile:
+            request = ProfileRequest(user_id=user_id)
+            return stub.GetProfile(request)
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that the gRPC call has no deadline/timeout. Without a deadline, the call can hang indefinitely if the server is slow or unresponsive, causing cascading hangs upstream. Recommends passing an explicit timeout (e.g., stub.GetProfile(request, timeout=N))."
+        metric: resilience
+
+  # --- Test Case 12: No Retry/Backoff (resilience) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def publish_event(client, event: dict) -> None:
+            client.publish("events", json.dumps(event))
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies a resilience gap in this external publish call: EITHER that transient failures (network blip, broker unavailable) cause the publish to fail with no retry or backoff, OR that the call has no timeout and can hang indefinitely. Both are valid resilience findings for a fire-and-forget external call."
+        metric: resilience
+      - type: llm-rubric
+        value: "Does NOT demand a full circuit-breaker or retry library for this small snippet — a reasonable retry/backoff suggestion is sufficient. Does NOT fabricate correctness bugs in the serialization or publish logic."
+        metric: false-positive-avoidance
+
+  # --- Test Case 13: Unbounded SCAN (resilience) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def collect_all_keys(client, pattern: str) -> list:
+            keys = []
+            cursor = 0
+            while True:
+                cursor, batch = client.scan(cursor, match=pattern)
+                keys.extend(batch)
+                if cursor == 0:
+                    break
+            return keys
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that this collects ALL matching keys into memory with no upper bound — on a large keyspace this can exhaust memory or block for a very long time. Recommends a max-iterations or max-items safety cap, streaming/yielding instead of accumulating, or early termination."
+        metric: resilience
+
+  # --- Test Case 14: Cleanup Skipped After Early Return (resilience) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def reset_index(client, index_name: str, key_prefix: str) -> None:
+            try:
+                client.ft(index_name).dropindex()
+            except IndexNotFoundError:
+                return  # index already gone — bail out
+            for key in client.scan_iter(match=f"{key_prefix}:*"):
+                client.delete(key)
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that when the index is already gone the function returns early and SKIPS the key cleanup, leaving orphaned keys. The key cleanup should run unconditionally (not gated by dropindex success) so recovery is idempotent."
+        metric: resilience
+
+  # --- Test Case 15: Missing HTTP Error Handling (correctness) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```javascript
+        async function fetchUserData(userId) {
+          const response = await fetch(`/api/users/${userId}`);
+          const data = await response.json();
+          return data;
+        }
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that failed HTTP responses (4xx/5xx) and network errors are not handled. fetch() does not reject on HTTP error status codes — it only rejects on network failures. The code proceeds to parse the response body even when the request failed."
+        metric: correctness
+      - type: llm-rubric
+        value: "Recommends checking response.ok or response.status before parsing, and handling network errors with try/catch around the fetch call."
+        metric: correctness
+
+  # --- Test Case 16: React Stale Closure (correctness) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```tsx
+        function UserList({ users }) {
+          const [filtered, setFiltered] = useState(users);
+          useEffect(() => {
+            setFiltered(users.filter(u => u.active));
+          }, []);
+          return <ul>{filtered.map(user => <li>{user.name}</li>)}</ul>;
+        }
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies the stale closure: useEffect has an empty dependency array but uses `users` from props, so the filter only runs on mount and never updates when `users` changes. Recommends adding `users` to the dependency array."
+        metric: correctness
+      - type: llm-rubric
+        value: "Identifies the missing key prop on list items (<li> elements in the map). Recommends adding a unique key attribute."
+        metric: correctness
+
+  # --- Test Case 17: Sync-over-Async (correctness) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        class SyncClient:
+            def fetch(self, url: str) -> dict:
+                loop = asyncio.get_event_loop()
+                return loop.run_until_complete(self._async_fetch(url))
+
+            async def _async_fetch(self, url: str) -> dict:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url) as resp:
+                        return await resp.json()
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that run_until_complete (or get_event_loop) fails with RuntimeError when called from within an already-running event loop. Recommends a valid remediation: asyncio.run_coroutine_threadsafe, running on a dedicated thread with its own loop, or asyncio.run() with caveats."
+        metric: correctness
+
+  # --- Test Case 18: Resource Leak — close() Misses _pool (resource management) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        class DBClient:
+            def __init__(self, url: str):
+                self._conn = create_connection(url)
+                self._pool = create_pool(url)
+
+            def close(self):
+                self._conn.close()
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that close() only cleans up _conn and leaks _pool. Every resource initialized in __init__ must have a cleanup path. Recommends adding self._pool.close() (or equivalent) to the close() method."
+        metric: resource-management
+
+  # --- Test Case 19: Unawaited Async Close (resource management) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```typescript
+        class CacheClient {
+          private client: GlideClient;
+          constructor(client: GlideClient) {
+            this.client = client;
+          }
+          async dispose(): Promise<void> {
+            this.client.close();  // close() returns a Promise
+          }
+        }
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that client.close() returns a Promise that is not awaited, so dispose() resolves before the connection is actually closed — risking a half-open connection or the process exiting before cleanup completes. Recommends await this.client.close()."
+        metric: resource-management
+
+  # --- Test Case 20: ValkeySearch Tag Query Injection (security) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def search_by_tag(tag_value: str) -> list:
+            query = f"@category:{{{tag_value}}}"
+            return client.ft("idx").search(query)
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that tag_value is interpolated directly into the query without escaping, allowing query injection. Recommends escaping special characters (pipe, tilde, and other FT.SEARCH metacharacters)."
+        metric: security
+
+  # --- Test Case 21: Missing Timeout on Redis Client (resilience) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def create_client(host: str, port: int) -> redis.Redis:
+            return redis.Redis(host=host, port=port)
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that no timeout is configured on the connection. Missing timeouts can cause cascading hangs in production. Recommends setting socket_timeout and/or socket_connect_timeout."
+        metric: resilience
+
+  # --- Test Case 22: Hardcoded Credential (security) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        import requests
+
+        API_KEY = "key_9f8e7d6c5b4a3210fedcba9876543210"
+
+        def charge(amount: int):
+            return requests.post(
+                "https://api.payments.example/v1/charges",
+                headers={"Authorization": f"Bearer {API_KEY}"},
+                json={"amount": amount},
+            )
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that a live secret/API key is hardcoded in source. This leaks via VCS history, logs, and shared code. Recommends loading from an environment variable or secrets manager, and rotating the exposed key."
+        metric: security
+
+  # --- Test Case 23: Silent Truncation (correctness) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def get_recent_orders(db, customer_id: str) -> list:
+            return db.execute(
+                "SELECT * FROM orders WHERE customer_id = ? LIMIT 0, 10000",
+                (customer_id,),
+            )
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that the hardcoded 10000 limit silently truncates results — a customer with more than 10000 orders loses data with no error or warning. Recommends making the limit configurable, paginating, or logging a warning when the limit is hit."
+        metric: correctness
+
+  # --- Test Case 24: Optional[int] Truthiness Drops Zero (correctness) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
         ```python
         def set_limit(self, limit: Optional[int] = None) -> None:
             if limit:
@@ -543,14 +568,13 @@ tests:
         ```
     assert:
       - type: llm-rubric
-        value: "Identifies that 'if limit:' is wrong for an Optional[int] where 0 is valid — a caller passing 0 is silently ignored and the limit is never set, because 0 is falsy. Recommends 'if limit is not None:'. Must catch the actual bug, not merely restate the types."
+        value: "Identifies that 'if limit:' is wrong for an Optional[int] where 0 is valid — a caller passing 0 is silently ignored because 0 is falsy. Recommends 'if limit is not None:'."
         metric: correctness
 
-  # Performance — N+1 query pattern (entire Performance category was untested)
-  - description: "N+1 query pattern in a loop"
-    vars:
-      prompt: |
-        Review this Python code that loads orders for a list of users:
+  # --- Test Case 25: N+1 Query Pattern (performance) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
         ```python
         def load_orders(db, user_ids: list[int]) -> dict[int, list]:
             result = {}
@@ -562,14 +586,13 @@ tests:
         ```
     assert:
       - type: llm-rubric
-        value: "Identifies the N+1 query pattern — one query per user_id means N round-trips that grow linearly with the input. Recommends a single batched query (e.g. WHERE user_id IN (...) or a JOIN) and grouping the results in memory. Should focus on the round-trip count, not fabricate unrelated issues."
+        value: "Identifies the N+1 query pattern — one query per user_id means N round-trips that grow linearly with input size. Recommends a single batched query (WHERE user_id IN (...) or a JOIN) and grouping results in memory."
         metric: performance
 
-  # Licensing — incompatible dependency license (Dependencies/Build/Licensing rule)
-  - description: "GPL dependency added to an MIT-licensed project"
-    vars:
-      prompt: |
-        Review this dependency addition. The project is MIT-licensed (per its LICENSE file and package metadata):
+  # --- Test Case 26: GPL Dependency in MIT Project (licensing) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
         ```diff
         # pyproject.toml
          [project]
@@ -582,17 +605,13 @@ tests:
         ```
     assert:
       - type: llm-rubric
-        value: "Identifies a license-compatibility problem: adding a GPL-3.0 dependency to an MIT-licensed project can impose copyleft obligations incompatible with MIT distribution. Recommends verifying the license, seeking an MIT/BSD/Apache-licensed alternative, or consulting on licensing before adding it. A review that ignores the license issue fails."
+        value: "Identifies a license-compatibility problem: adding a GPL-3.0 dependency to an MIT-licensed project can impose copyleft obligations incompatible with MIT distribution. Recommends verifying the license, seeking an alternative, or consulting before adding."
         metric: licensing
 
-  # ─── HARD CASES: designed to have headroom over a bare model ────────────────
-
-  # Sibling-parity: escaping applied to one query builder but not its twin
-  # (checklist rule: "Same-pattern sibling sweep")
-  - description: "escaping applied in one search method but not its sibling"
-    vars:
-      prompt: |
-        Review this Python module. Both functions build ValkeySearch/RediSearch TAG queries from user input:
+  # --- Test Case 27: Sibling-Parity Escaping Gap (security) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
         ```python
         def _escape_tag(value: str) -> str:
             specials = r',.<>{}[]"\':;!@#$%^&*()-+=~|/ '
@@ -610,32 +629,278 @@ tests:
         ```
     assert:
       - type: llm-rubric
-        value: "Identifies that search_by_owner interpolates `owner` directly into the TAG query WITHOUT the _escape_tag() that its sibling search_by_category applies — a partial fix that leaves a query-injection hole in the second method. The core finding must be the missing-on-the-sibling escaping (parity), not merely a generic 'escape user input' remark. Recommends applying _escape_tag() (or equivalent) in search_by_owner too. A review that only praises search_by_category's escaping, or flags injection generically without noticing the sibling is unescaped, does not satisfy the criterion."
+        value: "Identifies that search_by_owner interpolates owner directly into the TAG query WITHOUT the _escape_tag() that its sibling search_by_category applies — a partial fix that leaves a query-injection hole in the second method. The finding must be about the sibling inconsistency (parity), not just a generic 'escape user input' remark."
         metric: security
 
-  # Precision on a correct pure fragment — must not fabricate or demand out-of-scope hardening
-  # (skill rule: scope discipline — do NOT flag missing error handling/validation on non-I/O code)
-  - description: "negative — correct pure function, no fabricated issues"
-    vars:
-      prompt: |
-        Review this Python function:
+  # --- Test Case 5: Silent Failure (resilience) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
         ```python
-        def celsius_to_fahrenheit(celsius: float) -> float:
-            return celsius * 9 / 5 + 32
+        # workers/processor.py
+        async def process_batch(items: list[dict]) -> dict:
+            results = {"success": 0, "failed": 0}
+            for item in items:
+                try:
+                    await transform_and_store(item)
+                    results["success"] += 1
+                except Exception:
+                    results["failed"] += 1
+            return results
         ```
     assert:
       - type: llm-rubric
-        value: "This is a correct, self-contained pure function with a typed `float` parameter and no I/O. The formula (celsius * 9 / 5 + 32) is correct, uses float division, and has no hidden edge cases. PASS only if the review does NOT fabricate correctness or security issues and does NOT demand out-of-scope hardening — it must not insist on runtime type/None validation (the parameter is typed `float`), exception handling, logging, or input-range checks for a pure arithmetic helper, and must not invent a logic or operator-precedence bug in the (correct) formula. At most one clearly-optional micro-suggestion (e.g. adding a docstring) is acceptable. FAIL if it presents missing validation/error-handling as a real issue, invents a bug, or pads the review with out-of-scope defensive requirements."
+        value: "The review identifies silent failure: bare 'except Exception' catches without logging, preserving item identity, or distinguishing root causes. Operators cannot diagnose what failed or retry specific items."
+        metric: resilience
+      - type: llm-rubric
+        value: "The review notes that bare 'except Exception' catches programming errors (AttributeError, TypeError, KeyError) that indicate bugs and should propagate loudly rather than being silently counted as data failures."
+        metric: resilience
+      - type: llm-rubric
+        value: "The review does NOT claim the counting logic itself is buggy, and does NOT suggest the entire try/except pattern is wrong (per-item error isolation is valid; the issue is the silent swallowing)."
         metric: false-positive-avoidance
 
-# ─── Intentionally NOT covered by snippet tests ─────────────────────────────
-# The following review-checklist categories require project-level context that a
-# self-contained code snippet cannot supply, so they are exercised by full
-# PR-based review runs rather than these unit-style rubrics:
-#   - API consistency      (needs comparable sibling implementations to compare against)
-#   - Test quality/coverage (the snippet under review has no accompanying test files)
-#   - Dependency CVEs       (needs a version/advisory-registry lookup)
-#   - Design fit/scalability (needs the surrounding system architecture)
-#   - Documentation accuracy (subjective; needs the broader codebase/README)
-# Forcing these into single-snippet rubrics would yield noisy, unreliable grades.
-# This omission is deliberate, not an oversight.
+  # ===========================================================================
+  # FULL-PARITY EXPANSION (cases 28-37) — checklist categories not yet tested.
+  # Each targets a category from _shared/review-checklist.md that the first 27
+  # cases did not exercise: design-fit, API consistency, library-API contract,
+  # test quality, documentation, dependency pinning/licensing. Committed BEFORE
+  # the skill references the shared checklist (EDD red phase).
+  # ===========================================================================
+
+  # --- Test Case 28: Reimplemented Utility (design fit / codebase alignment) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # utils/text.py already exports slugify(). This new file re-adds it.
+        # api/handlers.py
+        def make_slug(title: str) -> str:
+            s = title.lower().strip()
+            s = re.sub(r"[^a-z0-9]+", "-", s)
+            return s.strip("-")
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review flags that make_slug reimplements functionality that already exists as utils.text.slugify (design-fit / duplication), and recommends using the existing utility rather than adding a parallel implementation. The finding is about codebase alignment / not-invented-here, not about the correctness of the regex."
+        metric: design-fit
+      - type: llm-rubric
+        value: "The review does NOT invent a correctness bug in the slug regex (it is a reasonable slug implementation). At most it notes the duplication and any minor edge case as optional."
+        metric: false-positive-avoidance
+
+  # --- Test Case 29: Inconsistent Constructor Signature (API consistency) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # Existing sibling stores in this package all take (self, *, client, namespace).
+        # This new store diverges in parameter order and naming.
+        class RedisVectorStore:
+            def __init__(self, conn, ns=None):
+                self.conn = conn
+                self.ns = ns
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review flags that RedisVectorStore.__init__ is inconsistent with sibling stores in the package: positional 'conn'/'ns' instead of the established keyword-only (client, namespace) convention. The finding is specifically about API consistency with sibling implementations."
+        metric: api-consistency
+
+  # --- Test Case 30: Unawaited Async close() (library API contract) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # glide client's close() returns a coroutine that must be awaited.
+        class Cache:
+            def __init__(self, client):
+                self._client = client
+
+            async def shutdown(self):
+                self._client.close()  # not awaited
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review identifies that self._client.close() returns a coroutine/awaitable that is never awaited, so cleanup does not actually complete (half-open connections, possible 'coroutine was never awaited' warning). The fix is to 'await self._client.close()'. This tests reasoning about the library's cleanup-method return type."
+        metric: library-api-contract
+
+  # --- Test Case 31: Test Does Not Assert Behavior (test quality) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # tests/test_charge.py
+        def test_charge_creates_record():
+            svc = ChargeService(FakeDB())
+            svc.charge(user_id=1, amount=500)
+            # no assertions
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review flags that test_charge_creates_record exercises the code path but asserts nothing, so it cannot fail when the behavior breaks (a false-confidence test). It recommends asserting the observable outcome (a record was created / balance changed / return value). The finding is about test QUALITY, not merely coverage."
+        metric: test-quality
+
+  # --- Test Case 32: Correct Test With Real Assertions (test quality FP guard) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # tests/test_slug.py
+        def test_slugify_lowercases_and_dashes():
+            assert slugify("Hello World!") == "hello-world"
+
+        def test_slugify_trims_edges():
+            assert slugify("  A B  ") == "a-b"
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review does NOT fabricate problems with these tests. They assert observable behavior with clear inputs/outputs and cover two distinct cases. A review demanding more tests, parametrization, or flagging these as inadequate is a false positive; at most a clearly-optional suggestion is acceptable."
+        metric: false-positive-avoidance
+
+  # --- Test Case 33: Misleading Fallback Log (documentation / operability) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        try:
+            from valkey_glide import GlideClient
+            cache = GlideClient(...)
+        except ImportError:
+            logger.info("valkey_glide unavailable")   # falls back to per-process dict
+            cache = {}
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review flags that the fallback log communicates only the cause ('valkey_glide unavailable') but not the operational CONSEQUENCE — that the cache is now a per-process in-memory dict NOT shared across nodes, which silently changes correctness in a distributed deployment. It recommends the log state the consequence, and ideally that INFO is too quiet for a degraded mode."
+        metric: documentation
+
+  # --- Test Case 34: Unpinned + Heavy Dependency (dependencies/licensing) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```toml
+        # pyproject.toml diff — a single leftpad-style need pulls in a huge unpinned dep
+        [project]
+        dependencies = [
+            "requests",
+            "pandas",   # added just to call pandas.isna() in one place
+        ]
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review flags at least one of: the dependencies are unpinned (no version constraints, hurting build reproducibility), OR pulling in pandas solely to call isna() in one place is a heavyweight dependency for a trivial need (a simple 'x is None or x != x' or stdlib check suffices). The finding is about dependency justification / pinning."
+        metric: dependencies
+
+  # --- Test Case 35: N+1 Query In A Loop (performance, real impact) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def load_orders(user_ids: list[int]) -> list[Order]:
+            orders = []
+            for uid in user_ids:
+                orders.append(db.query("SELECT * FROM orders WHERE user_id = ?", uid))
+            return orders
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review identifies the N+1 query pattern: one DB round-trip per user_id in the loop, which does not scale. It recommends a single batched query (WHERE user_id IN (...)) or equivalent. This is a measurable performance issue, not a speculative micro-optimization."
+        metric: performance
+
+  # --- Test Case 36: Over-Engineering (design fit — false positive guard) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # A PR that only needs to add two numbers, but adds a plugin framework.
+        class Operation(ABC):
+            @abstractmethod
+            def apply(self, a, b): ...
+
+        class AddOperation(Operation):
+            def apply(self, a, b): return a + b
+
+        class OperationRegistry:
+            _ops = {}
+            @classmethod
+            def register(cls, name, op): cls._ops[name] = op
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review flags over-engineering: an abstract base class, registry, and plugin indirection introduced for what the change actually needs (a simple addition). It recommends solving the problem that exists now rather than building a generic framework speculatively. The finding is about unnecessary complexity / YAGNI (design health)."
+        metric: design-fit
+
+  # --- Test Case 37: Missing Docstring On Correct Simple Code (FP / scope guard) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def clamp(value: float, lo: float, hi: float) -> float:
+            return max(lo, min(value, hi))
+        ```
+    assert:
+      - type: llm-rubric
+        value: "The review does NOT block or heavily flag this correct, self-evident one-line function for lacking a docstring. A docstring may be mentioned as a clearly-optional nit at most; treating missing documentation on trivially-obvious code as a required change is a scope/precision failure."
+        metric: false-positive-avoidance
+
+  # ===========================================================================
+  # MERGED-IN CASES (38-40) — the 3 cases unique to the prior live eval that the
+  # 37 above did not already cover. Folded in when the two evals were unified so
+  # this suite is the single canonical eval. (The other live cases had cert
+  # equivalents already; only these three added new coverage.)
+  # ===========================================================================
+
+  # --- Test Case 38: Operator Not Handled In Delete Path (correctness / CRUD parity) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # select() and delete() are supposed to support the same operators.
+        def _apply(self, op, field, value, query):
+            if op == "EQUAL":
+                query.where(field == value)
+            elif op == "NOT_EQUAL":
+                query.search(field, negate=True)
+
+        def select(self, op, field, value):
+            q = Query()
+            self._apply(op, field, value, q)
+            return q.run()
+
+        def delete(self, op, field, value):
+            q = Query()
+            if op == "EQUAL":
+                q.where(field == value)
+            return q.delete()  # NOT_EQUAL silently does nothing
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies the core defect: delete() does not route through _apply and only handles EQUAL, so a NOT_EQUAL delete does not apply the intended filter — unlike select(), which handles NOT_EQUAL via _apply. Accept EITHER plausible consequence for the unfiltered NOT_EQUAL path: that it silently deletes nothing (no-op), OR that q.delete() on an unfiltered query deletes every row (a critical data-loss bug in common ORMs). Recommends handling the same operator set across all CRUD paths (or sharing _apply). PASS as long as the operator-parity root cause is identified and a sound fix is given; do NOT fail solely because the review picked one consequence over the other."
+        metric: correctness
+
+  # --- Test Case 39: Missing TLS + Auth For Cloud-Hosted Cache (resilience / cloud readiness) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        # Connector intended for production use against managed Redis/Valkey (e.g. AWS ElastiCache).
+        def connect(host: str, port: int = 6379):
+            return redis.Redis(host=host, port=port)
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that this is not cloud/production ready: no TLS/SSL support (required by managed services like ElastiCache/MemoryDB/Azure Cache), no authentication (token/password), and no connection pooling or request timeout configuration. Recommends making TLS and auth configurable with sensible defaults. It is acceptable if it focuses on TLS and auth as the most critical gaps."
+        metric: resilience
+
+  # --- Test Case 40: Naive Escaping Of FT TEXT Phrase Query (security / escape context) ---
+  - vars:
+      skill_prompt: file://pr-code-review.md
+      code: |
+        ```python
+        def search_phrase(client, user_text: str) -> list:
+            escaped = user_text.replace('"', '')   # strip quotes only
+            query = f'@body:"{escaped}"'
+            return client.ft("idx").search(query)
+        ```
+    assert:
+      - type: llm-rubric
+        value: "Identifies that stripping only double quotes is insufficient escaping for a TEXT phrase query — other FT query metacharacters can still alter or break out of the query, and silently deleting user input also changes search semantics. Notes that TEXT phrase fields need their own proper escape function distinct from TAG escaping, validated against the engine's query syntax."
+        metric: security

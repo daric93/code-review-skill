@@ -17,8 +17,11 @@ production code with a test suite, a measured baseline, and a repeatable improve
 > starting point so the EDD discipline is demonstrable in the commit timeline. The supporting
 > `skills/`, `evals/`, `docs/`, `CONVENTIONS.md`, and `sync.sh` are copied in from that toolkit
 > so this repo is self-contained — they will appear as new files here, but they are existing
-> work, not built fresh for the course. The step-by-step rebuild lives under
-> [`module-1/`](module-1/) … [`module-4/`](module-4/).
+> work, not built fresh for the course. The repo is organized by function (skill-centric):
+> the skill lives in [`skills/`](skills/), the eval in [`evals/`](evals/), and the course-work
+> narrative — what each module required, plus the governance and self-assessment artifacts — is
+> in [`docs/`](docs/). See [`docs/course-work.md`](docs/course-work.md) for how the skill was
+> built module by module and where each deliverable now lives.
 
 - **Skill under review:** [`skills/pr-code-review/SKILL.md`](skills/pr-code-review/SKILL.md)
 - **Eval framework:** [`evals/pr-code-review/`](evals/pr-code-review/)
@@ -80,18 +83,20 @@ All are provider-neutral (`SKILL.md`) and install into Kiro or Claude Code via
 
 Located in [`evals/pr-code-review/`](evals/pr-code-review/). Built on
 [promptfoo](https://promptfoo.dev), running both the review generation and the LLM grading
-through `kiro-cli` (no separate API key — uses the Kiro subscription).
+through the Claude CLI via a small wrapper ([`claude.js`](evals/pr-code-review/claude.js)),
+across two providers (Sonnet + Haiku) for a Model Ladder.
 
 ### Two arms — the evidence of value
 
-| Arm | Config | Provider | What it measures |
+| Arm | Config | Prompt fed to the model | What it measures |
 |---|---|---|---|
-| **Skill ON** | [`promptfooconfig.yaml`](evals/pr-code-review/promptfooconfig.yaml) | [`kiro-review.sh`](evals/kiro-review.sh) — injects the checklist + precision gates | The skill's actual behavior |
-| **Skill OFF (baseline)** | [`promptfooconfig.baseline.yaml`](evals/pr-code-review/promptfooconfig.baseline.yaml) | [`kiro-baseline.sh`](evals/kiro-baseline.sh) — bare model, same pin | The raw model on the same tests |
+| **Skill ON** | [`promptfooconfig.yaml`](evals/pr-code-review/promptfooconfig.yaml) | skill command + injected [`review-checklist.md`](skills/_shared/review-checklist.md) + the code | The skill's actual behavior |
+| **Skill OFF (baseline)** | [`promptfooconfig.baseline.yaml`](evals/pr-code-review/promptfooconfig.baseline.yaml) | the code only — no skill, no checklist | The raw model on the same tests |
 
-Both arms use the **same model, same test snippets, same grader, same rubric, same threshold**.
-The only variable is whether the skill's rulebook and precision gates are present. The
-per-metric score delta between the two runs is the skill's measured lift — its evidence of value.
+Both configs are **identical** — same 40 test snippets, same `claude.js` provider and Model
+Ladder, same graded 1–5 rubric, same `0.75` threshold. The only variable is whether the skill's
+prompt and rulebook are injected. The per-metric score delta between the two runs is the skill's
+measured lift — its evidence of value.
 
 ### Three test categories (always kept in balance)
 
@@ -114,18 +119,18 @@ score, catching slow quality decay that binary pass/fail hides. Full scale in [`
 ### Running it
 
 ```bash
-npm install -g promptfoo                     # once
-curl -fsSL https://cli.kiro.dev/install | bash   # once — provides kiro-cli
+npm install -g promptfoo    # once
+# Claude CLI must be installed and authenticated (claude.js shells out to it)
 
 cd evals/pr-code-review
 
 # Evidence-of-value A/B (run both, then compare in the UI):
-promptfoo eval -c promptfooconfig.baseline.yaml --no-cache   # skill OFF
+promptfoo eval -c promptfooconfig.baseline.yaml --no-cache   # skill OFF (bare model)
 promptfoo eval -c promptfooconfig.yaml          --no-cache   # skill ON
 promptfoo view                                               # compare per-metric scores
 
-# Iterate on a single dimension while editing the checklist:
-promptfoo eval --filter-pattern "SQL injection"
+# One provider only (faster iteration):
+promptfoo eval -c promptfooconfig.yaml --filter-providers sonnet --no-cache
 ```
 
 Full run/maintain guide: [`evals/README.md`](evals/README.md).
