@@ -85,5 +85,4 @@ pr-code-review-retrospective → consolidates ≥3 reviews, edits checklist/skil
 evals/pr-code-review  → verifies the change closed the gap
 ```
 
-See [`skill-evaluation-workflow.md`](skill-evaluation-workflow.md) for the full evaluation and
-improvement methodology.
+See [`EVALUATION.md`](../EVALUATION.md) for the full evaluation and improvement methodology.

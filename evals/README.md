@@ -93,4 +93,4 @@ The strongest signal is what OTHER reviewers caught that the skill didn't. `pr-c
 compares the skill's review against other reviewers on the same PR, logs misses/false-positives,
 and adds eval tests; `pr-code-review-retrospective` consolidates ≥3 reviews and edits the
 checklist/skill, then re-runs this eval to confirm the gap closed. Misses become positive tests;
-false positives become negative tests. See [`../docs/skill-evaluation-workflow.md`](../docs/skill-evaluation-workflow.md).
+false positives become negative tests. See [`../EVALUATION.md`](../EVALUATION.md).

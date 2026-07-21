@@ -26,7 +26,7 @@ production code with a test suite, a measured baseline, and a repeatable improve
 - **Skill under review:** [`skills/pr-code-review/SKILL.md`](skills/pr-code-review/SKILL.md)
 - **Eval framework:** [`evals/pr-code-review/`](evals/pr-code-review/)
 - **How I evaluate & improve (the rubric):** [`RUBRIC.md`](RUBRIC.md) and
-  [`docs/skill-evaluation-workflow.md`](docs/skill-evaluation-workflow.md)
+  [`EVALUATION.md`](EVALUATION.md)
 
 ---
 
@@ -160,7 +160,7 @@ EVERY ~3 PRs:                                              #pr-code-review-retro
 
 The recall/precision trend table in `review-gaps-retro.md` is the long-term signal of whether the
 skill is actually getting better. Rationale, comparison to peers, and anti-patterns:
-[`docs/skill-evaluation-workflow.md`](docs/skill-evaluation-workflow.md).
+[`EVALUATION.md`](EVALUATION.md).
 
 ---
 

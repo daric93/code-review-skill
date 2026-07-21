@@ -1,8 +1,13 @@
-# Skill Evaluation & Improvement Workflow
+# Evaluation — how the pr-code-review skill is measured and improved
 
-How I evaluate and continuously improve my Kiro review skills (`pr-code-review`,
-`pr-comment-resolver`) using promptfoo evals and a closed feedback loop driven by real
-PR activity.
+How I evaluate and continuously improve the `pr-code-review` skill using promptfoo evals and a
+closed feedback loop driven by real PR activity. Written blog-post style: the rationale, the
+harness, the current results, and what's next.
+
+> Provider-neutral: paths like `<config>/` resolve to `~/.kiro/` (Kiro) or `~/.claude/` (Claude
+> Code) at runtime. One sensor referenced below, `pr-comment-resolver`, lives in the full
+> toolkit and is not part of this certification submission; it's included in the loop diagram
+> for completeness.
 
 ---
 
@@ -43,7 +48,7 @@ gaps into skill improvements, and every improvement is verified by re-running th
 
 ## Components
 
-### 1. The eval (`~/.kiro/evals/pr-code-review/`)
+### 1. The eval (`evals/pr-code-review/`)
 
 A promptfoo test suite for the `pr-code-review` skill. Three kinds of tests:
 
@@ -145,8 +150,8 @@ open gap), so that's allowed without the analyst.
 npm install -g promptfoo
 
 # Smoke test the plumbing
-cd ~/.kiro/evals/pr-code-review
-promptfoo eval --filter-pattern "SQL injection"
+cd evals/pr-code-review
+promptfoo eval --filter-providers sonnet --no-cache
 
 # Baseline the full suite
 promptfoo eval
@@ -192,14 +197,14 @@ Reviews accumulated gaps, edits the skill, re-runs the eval, syncs to git.
 
 | Path | Role |
 |---|---|
-| `~/.kiro/evals/pr-code-review/promptfooconfig.yaml` | The eval test suite (graded 1–5 rubric) |
-| `~/.kiro/evals/README.md` | How to run/maintain evals (when to run, fix skill, fix eval, improve) |
-| `~/.kiro/skills/pr-code-review.md` | The skill under test |
-| `~/.kiro/skills/grade-the-grader.md` | Meta-eval — audits the eval's grading quality |
-| `~/.kiro/skills/pr-code-review-gap-analyzer.md` | Sensor — PRs I reviewed |
-| `~/.kiro/skills/pr-comment-resolver.md` | Sensor — PRs I authored + comment fixing |
-| `~/.kiro/skills/pr-code-review-retrospective.md` | Analyst + editor |
-| `~/.kiro/retros/review-gaps-retro.md` | Shared ground-truth log + trend table |
+| `evals/pr-code-review/promptfooconfig.yaml` | The eval test suite (graded 1–5 rubric) |
+| `evals/README.md` | How to run/maintain evals (when to run, fix skill, fix eval, improve) |
+| `skills/pr-code-review/SKILL.md` | The skill under test |
+| `skills/grade-the-grader/SKILL.md` | Meta-eval — audits the eval's grading quality |
+| `skills/pr-code-review-gap-analyzer/SKILL.md` | Sensor — PRs I reviewed |
+| `pr-comment-resolver` (full toolkit; not in this submission) | Sensor — PRs I authored + comment fixing |
+| `skills/pr-code-review-retrospective/SKILL.md` | Analyst + editor |
+| `<config>/retros/review-gaps-retro.md` (runtime dir, e.g. `~/.kiro/` or `~/.claude/`) | Shared ground-truth log + trend table |
 
 ---
 
