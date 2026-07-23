@@ -14,10 +14,10 @@ INPUT FORMAT: This prompt, followed by the shared REVIEW CHECKLIST, then "Review
 RULEBOOK: ../../skills/_shared/review-checklist.md — the language-agnostic list of WHAT to
   check. This command supplies the reviewer ROLE + precision discipline; the checklist supplies
   the categories. When a review RULE changes, edit the checklist, not this file.
-TEST FILE: pr-code-review-tests.md (40 cases + grading, same directory)
+TEST FILE: pr-code-review-tests.md (test case definitions, same directory)
 EVAL CONFIG: promptfooconfig.yaml (40 cases, two providers, graded 1-5, checklist injected)
-LOAD-BEARING AUDIT: documented in pr-code-review-tests.md (iteration 4 + audit section);
-  4 instructions removed as non-load-bearing.
+ITERATION LOG: ITERATION-LOG.md (same directory) — baseline → hypothesis → change → result
+  per iteration, incl. the LOAD-BEARING AUDIT (4 instructions removed as non-load-bearing).
 -->
 
 # pr-code-review

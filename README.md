@@ -5,6 +5,21 @@
 > proves it adds value), and the **closed feedback loop** that keeps it improving from real
 > reviewer activity.
 
+## For the Examiner — the three artifacts
+
+| Artifact | File | What to look for |
+|---|---|---|
+| **The Prompt** | [`evals/pr-code-review/pr-code-review.md`](evals/pr-code-review/pr-code-review.md) | RTCC-structured; every instruction load-bearing (4 removed by audit — see the Log) |
+| **The Evaluations** | [`evals/pr-code-review/promptfooconfig.yaml`](evals/pr-code-review/promptfooconfig.yaml) | 40 cases, 18 distinct metrics, graded 1–5 rubric, `0.75` pass threshold, Sonnet + Haiku (no frontier model), plus a bare-model baseline arm ([`promptfooconfig.baseline.yaml`](evals/pr-code-review/promptfooconfig.baseline.yaml)) |
+| **The Log** | [`evals/pr-code-review/ITERATION-LOG.md`](evals/pr-code-review/ITERATION-LOG.md) | 6 documented iterations, each with baseline scores → hypothesis → change → measured result → reasoning; Red/Green/Refactor visible in git history (tests committed before prompts) |
+
+Two prompt files exist — which is "The Prompt"? **The eval fixture above** (105 lines) is the
+review brain that is tested, iterated, and load-bearing audited. The 630-line
+[`skills/pr-code-review/SKILL.md`](skills/pr-code-review/SKILL.md) wraps that same review logic
+with the production workflow (PR fetching, sub-agent fan-out, approval-gated comment posting,
+re-review mode) — orchestration that a snippet eval cannot exercise, included to show the skill
+in its deployed form.
+
 This package is the certification submission for the [`pr-code-review`](skills/pr-code-review/)
 skill. It follows an **eval-driven development (EDD)** approach: the skill is treated like
 production code with a test suite, a measured baseline, and a repeatable improvement process.

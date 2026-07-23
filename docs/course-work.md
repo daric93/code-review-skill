@@ -20,7 +20,7 @@ promptfoo eval with two providers and a baseline; do a load-bearing audit.
 | Test cases (written first) | [`evals/pr-code-review/pr-code-review-tests.md`](../evals/pr-code-review/pr-code-review-tests.md) |
 | RTCC command form (the eval fixture) | [`evals/pr-code-review/pr-code-review.md`](../evals/pr-code-review/pr-code-review.md) |
 | Promptfoo eval (2 providers, graded 1–5) | [`evals/pr-code-review/promptfooconfig.yaml`](../evals/pr-code-review/promptfooconfig.yaml) |
-| Load-bearing audit + iteration log | in the tests file (audit + iteration sections) |
+| Load-bearing audit + iteration log | [`evals/pr-code-review/ITERATION-LOG.md`](../evals/pr-code-review/ITERATION-LOG.md) |
 
 The tests file records the full progression: 5 seed cases → 27 → 40, with each prompt change
 made only after a failing test justified it, and the Model Ladder baseline (Sonnet vs Haiku).

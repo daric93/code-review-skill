@@ -15,8 +15,8 @@ Failures fixed before this doc was written.
 - [x] Comment header: what it does, when to use, input format, where the test file lives
   — **FIXED** (added HTML comment header this pass; it had none before)
 - [x] Promptfoo config committed in the same directory — yes (`module-1/`)
-- [x] Every instruction load-bearing (audit documented) — yes, audit in `pr-code-review-tests.md`,
-  4 instructions removed; header now points to it
+- [x] Every instruction load-bearing (audit documented) — yes, audit in
+  `evals/pr-code-review/ITERATION-LOG.md`, 4 instructions removed; header now points to it
 - [x] Test file exists and is referenced in the header — yes, header names
   `pr-code-review-tests.md`
 

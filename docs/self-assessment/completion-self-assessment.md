@@ -41,7 +41,7 @@ models.*
 **Artifact:** `module-1/pr-code-review-promptfoo.yaml` — 27 test cases, two providers
 (Sonnet + Haiku), llm-rubric assertions split between recall (catch real bugs) and
 false-positive-avoidance (stay silent on correct code). The iteration records in
-`pr-code-review-tests.md` show hypotheses and deltas per change.
+`evals/pr-code-review/ITERATION-LOG.md` show hypotheses and deltas per change.
 
 **Real-work example:** Before the program I used the single-provider eval at
 `evals/pr-code-review/` to validate a rubric-sharpening change (part of the 2026-07-02 commit).
@@ -69,7 +69,7 @@ named this rather than hide it.
 *Diagnosing why a prompt fails — Context vs Constraints, downstream vs upstream — with
 targeted one-change-at-a-time improvements.*
 
-**Artifact:** The iteration log in `pr-code-review-tests.md` — iteration 2 (added a resilience
+**Artifact:** The iteration log in `evals/pr-code-review/ITERATION-LOG.md` — iteration 2 (added a resilience
 definition to close resilience-test failures), iteration 4 (expanded into review dimensions +
 precision gates), each with a hypothesis and a measured before/after.
 

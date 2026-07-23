@@ -12,7 +12,8 @@ evals/
     promptfooconfig.yaml          ← canonical eval — SKILL ON (40 cases, graded 1-5, 2 providers)
     promptfooconfig.baseline.yaml ← SKILL OFF — same 40 cases, bare model (A/B control arm)
     pr-code-review.md             ← the skill command form under test (eval fixture)
-    pr-code-review-tests.md       ← the test cases in prose + the iteration/grading log
+    pr-code-review-tests.md       ← the test case definitions in prose
+    ITERATION-LOG.md              ← the EDD iteration log (baseline → hypothesis → change → result)
     claude.js                     ← provider + grader wrapper: shells out to the Claude CLI
     results.json                  ← last run snapshot (gitignored; the promptfoo DB is source of truth)
 ```
